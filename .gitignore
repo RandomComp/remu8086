@@ -1,0 +1,11 @@
+*.vmdk
+*.img
+*.so
+*.log
+*.out
+remu8086
+*.o
+*.bin
+repo_pushing_token
+.fuse_*
+old_show_info
