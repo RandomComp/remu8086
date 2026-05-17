@@ -1,2 +1,2 @@
 # remu8086
-This is my Intel 80386 emulator
+This is my emulator, unlike remu, this emulator actually reproduces opcodes one by one, without running them on a physical processor, thereby providing complete isolation
