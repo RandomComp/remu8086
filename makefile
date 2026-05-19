@@ -18,7 +18,7 @@ EMULATOR_OBJFILES := \
 all: emulator_all clean
 
 emulator_all: remu8086 clean
-	@./remu8086 c_program.bin
+	@./remu8086 program.bin
 
 emulator_to_kernel_path:
 	@echo "Copying remu8086 to kernel path..."
@@ -32,14 +32,11 @@ emulator_to_kernel_path:
 program:
 	@rm -f $@.bin
 
-	@nasm -f bin $@.asm -o $@.bin
+	@nasm -f elf32 $@.asm -o $@_asm.o
 
-c_program:
-	@rm -f $@.bin
+	@gcc -m32 -c $@.c -o $@_c.o -ffreestanding -fno-asynchronous-unwind-tables -masm=intel -fno-pic -fno-pie
 
-	@gcc -m32 -c $@.c -o $@.o -ffreestanding -fno-asynchronous-unwind-tables -masm=intel -fno-pic -fno-pie
-
-	@ld -m elf_i386 --oformat=binary -e kmain $@.o -o $@.bin
+	@ld -m elf_i386 --oformat=binary -Ttext 0x100000 -e entry $@_asm.o $@_c.o -o $@.bin
 
 remu8086: $(EMULATOR_OBJFILES)
 	@$(CC) $^ -o $@ -lSDL2 -lSDL2_image -pthread
@@ -56,4 +53,3 @@ clean:
 
 clean_all: clean_emulator clean_os clean
 	@rm -f remu8086
-

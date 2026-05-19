@@ -7,18 +7,21 @@ stack_bottom:
 stack_top:
 
 section .text
-mov eax, 1
-mov ecx, 256
 
-label:
+extern kmain
+
+global entry
+
+entry:
 	mov esp, stack_top
 
-	push ecx
+	mov ebp, esp
 
-	add ecx, ecx
+	push 500
+	call kmain
 
-	vmcall
+	; vmcall
 
-	pop ecx
-
+	mov eax, 0x60
+	mov ebx, 0
 	vmcall

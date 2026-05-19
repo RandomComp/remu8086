@@ -8,7 +8,7 @@ typedef _Bool bool;
 #define false 0
 #define nullptr (void*)(0)
 
-#define MIN(a, b) (a < b ? a : b)
+#define MIN(a, b) ((a) < (b) ? (a) : (b))
 
 #define PACKED __attribute__((packed))
 
@@ -95,12 +95,10 @@ typedef signed short int16;
 
 // Unsupported for 16 BITS, use uint with dynamical depth for this.
 #if defined(BITS_32) || defined(BITS_64)
-	typedef unsigned long long uint64;
-	
 	typedef unsigned int uint32;
 	typedef unsigned long long uint64;
 
-	typedef signed long int32;
+	typedef signed int int32;
 	typedef signed long long int64;
 #endif
 

@@ -6,6 +6,7 @@
 
 #include <malloc.h>
 
+#include "cpu.h"
 #include "opcodes.h"
 #include "types.h"
 
@@ -19,519 +20,58 @@
 // "╥", "╙", "╘", "╒", "╓", "╫", 
 // "╪", "┘", "┌"
 
-ssize_t is_nop(const byte* bytes, size_t max_bytes) {
-	if (bytes[0] == 0x90) {
-		return 1;
-	}
+int64 align_up(int64 num, int64 align) {
+	if (align == 0 || 
+		num % align == 0)
+		return num; 
 
-	return -1;
+	return ((num / align) + 1) * align;
 }
 
-void nop(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
-	printf("nop\n");
-}
+int main(int argc, char* argv[]) {
+	bool only_disassembling = false, force = false, quite = false;
 
-ssize_t is_mov_n_to_r(const byte* bytes, size_t max_bytes) {
-	if ((bytes[0] & 0xB8) == 0xB8) {
-		return 5;
+	int last = 0;
+
+	for (int i = 1; i < argc; i++) {
+		if (strcmp(argv[i], "-d") == 0) {
+			only_disassembling = true;
+		}
+
+		else if (strcmp(argv[i], "-f") == 0) {
+			force = true;
+		}
+
+		else if (strcmp(argv[i], "-q") == 0) {
+			quite = true;
+		}
+
+		else {
+			last = i; break;
+		}
 	}
 
-	return -1;
-}
-
-void mov_n_to_r(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
-	register_e reg = bytes[0] & 0b00000111;
-
-	uint32 number = 0;
-
-	for (size_t i = 0; i < 4; i++) {
-		number |= (uint32)(bytes[1 + i]) << (i * 8);
-	}
-
-	cpu->registers[reg] = number;
-
-	printf("mov %-3s, %u\n", registers_name[reg], number);
-}
-
-ssize_t is_mov_r_to_r(const byte* bytes, size_t max_bytes) {
-	if (bytes[0] == 0x89) {
-		return 2;
-	}
-
-	return -1;
-}
-
-void mov_r_to_r(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
-	register_e reg1 = (bytes[1] >> 0) & 0b00000111;
-	register_e reg2 = (bytes[1] >> 3) & 0b00000111;
-
-	cpu->registers[reg1] = cpu->registers[reg2];
-
-	printf("mov %3s, %3s\n", registers_name[reg1], registers_name[reg2]);
-}
-
-ssize_t is_add_r_r(const byte* bytes, size_t max_bytes) {
-	if (bytes[0] == 0x01) {
-		return 2;
-	}
-
-	return -1;
-}
-
-void add_r_r(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
-	register_e reg1 = (bytes[1] >> 0) & 0b00000111;
-	register_e reg2 = (bytes[1] >> 3) & 0b00000111;
-
-	uint32 reg2_value = cpu->registers[reg2];
-
-	bool cf = 0, zf = 0, of = 0;
-
-	if (cpu->registers[reg1] < reg2_value) { // unsigned overflow
-		cf = true;
-	}
-
-	cpu->registers[reg1] += reg2_value;
-	
-	if (cpu->registers[reg1] == 0) {
-		zf = true;
-	}
-
-	if (cpu->registers[reg1] & 0x80000000) { // sign
-		of = true;
-	}
-
-	// if ((cpu->registers[reg1] & 1) == 0) { // parity
-	// 	pf = true;
-	// }
-
-	uint32* eflags = &cpu->registers[REGISTER_EFLAGS];
-
-	*eflags &= ~(0b100011000101);
-
-	*eflags |= (uint32)cf << 0;
-	// *eflags |= (uint32)pf << 2;
-	*eflags |= (uint32)zf << 6;
-	*eflags |= (uint32)of << 11;
-
-	printf("add %-3s, %-3s = %u\n", registers_name[reg1], registers_name[reg2], cpu->registers[reg1]);
-}
-
-ssize_t is_sub_r_r(const byte* bytes, size_t max_bytes) {
-	if (bytes[0] == 0x29) {
-		return 2;
-	}
-
-	return -1;
-}
-
-void sub_r_r(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
-	register_e reg1 = (bytes[1] >> 0) & 0b00000111;
-	register_e reg2 = (bytes[1] >> 3) & 0b00000111;
-	
-	uint32 reg2_value = cpu->registers[reg2];
-
-	bool cf = 0, zf = 0, sf = 0;
-
-	if (cpu->registers[reg1] < reg2_value) { // unsigned overflow
-		cf = true;
-	}
-
-	cpu->registers[reg1] -= reg2_value;
-	
-	if (cpu->registers[reg1] == 0) {
-		zf = true;
-	}
-
-	if (cpu->registers[reg1] & 0x80000000) { // sign
-		sf = true;
-	}
-
-	// if ((cpu->registers[reg1] & 1) == 0) { // parity
-	// 	pf = true;
-	// }
-
-	uint32* eflags = &cpu->registers[REGISTER_EFLAGS];
-
-	*eflags &= ~(0b11000101);
-
-	*eflags |= (uint32)cf << 0;
-	// *eflags |= (uint32)pf << 2;
-	*eflags |= (uint32)zf << 6;
-	*eflags |= (uint32)sf << 7;
-
-	printf("sub %-3s, %-3s\n", registers_name[reg1], registers_name[reg2]);
-}
-
-ssize_t is_vmcall(const byte* bytes, size_t max_bytes) {
-	if (bytes[0] == 0x0f &&
-		bytes[1] == 0x01 &&
-		bytes[2] == 0xc1) {
-		return 3;
-	}
-
-	return -1;
-}
-
-void vmcall(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
-	printf("vmcall\n");
-
-	cpu_registers_t* registers = (cpu_registers_t*)(cpu->registers);
-
-	if (registers->eax == 0x60) {
-		registers->eip = 0;
-	}
-
-	else {
-		cpu_dump(cpu);
-	}
-}
-
-ssize_t is_short_jmp(const byte* bytes, size_t max_bytes) {
-	if (bytes[0] == 0xeb) {
-		return 2;
-	}
-
-	return -1;
-}
-
-void short_jmp(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
-	byte offset = bytes[1];
-
-	if ((offset & 0x80) == 0) {
-		cpu->registers[REGISTER_EIP] += offset;
-
-		printf("jmp %u (short)\n", offset);
-	}
-	
-	else if ((offset & 0x80) != 0) {
-		offset = ~(offset) + (byte)1;
-
-		cpu->registers[REGISTER_EIP] -= offset;
-
-		printf("jmp -%u (short)\n", offset);
-	}
-}
-
-ssize_t is_short_jb(const byte* bytes, size_t max_bytes) {
-	if (bytes[0] == 0x72) {
-		return 2;
-	}
-
-	return -1;
-}
-
-void short_jb(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
-	byte offset = bytes[1];
-
-	if ((offset & 0x80) == 0) {
-		if ((cpu->registers[REGISTER_EFLAGS] & 1) != 0)
-			cpu->registers[REGISTER_EIP] += offset;
-
-		printf("jb %u (short)\n", offset);
-	}
-	
-	else if ((offset & 0x80) != 0) {
-		offset = ~(offset) + (byte)1;
-
-		if ((cpu->registers[REGISTER_EFLAGS] & 1) != 0)
-			cpu->registers[REGISTER_EIP] -= offset;
-
-		printf("jb -%u (short)\n", offset);
-	}
-}
-
-ssize_t is_short_jnb(const byte* bytes, size_t max_bytes) {
-	if (bytes[0] == 0x73) {
-		return 2;
-	}
-
-	return -1;
-}
-
-void short_jnb(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
-	byte offset = bytes[1];
-
-	if ((offset & 0x80) == 0) {
-		if ((cpu->registers[REGISTER_EFLAGS] & 1) == 0)
-			cpu->registers[REGISTER_EIP] += offset;
-
-		printf("jnb %u (short)\n", offset);
-	}
-	
-	else if ((offset & 0x80) != 0) {
-		offset = ~(offset) + (byte)1;
-
-		if ((cpu->registers[REGISTER_EFLAGS] & 1) == 0)
-			cpu->registers[REGISTER_EIP] -= offset;
-
-		printf("jnb -%u (short)\n", offset);
-	}
-}
-
-ssize_t is_cmp_r_n(const byte* bytes, size_t max_bytes) {
-	if (bytes[0] == 0x83 &&
-		(bytes[1] & 0xff) == 0xf8) {
-		return 3;
-	}
-
-	return -1;
-}
-
-void cmp_r_n(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
-	register_e reg = bytes[1] & 0b00000111;
-
-	byte value = (byte)(bytes[2]);
-
-	uint32 reg_value = cpu->registers[reg];
-
-	reg_value -= value;
-
-	bool cf = 0, zf = 0, sf = 0;
-
-	if (reg_value >= value) { // unsigned overflow
-		cf = true;
-	}
-	
-	if (reg_value == 0) {
-		zf = true;
-	}
-
-	if (reg_value & 0x80000000) { // sign
-		sf = true;
-	}
-
-	// if ((cpu->registers[reg] & 1) == 0) { // parity
-	// 	pf = true;
-	// }
-
-	uint32* eflags = &cpu->registers[REGISTER_EFLAGS];
-
-	*eflags &= ~(0b11000101);
-
-	*eflags |= (uint32)cf << 0;
-	// *eflags |= (uint32)pf << 2;
-	*eflags |= (uint32)zf << 6;
-	*eflags |= (uint32)sf << 7;
-
-	printf("cmp %3s, %i\n", registers_name[reg], (int)value);
-}
-
-ssize_t is_cmp_r_r(const byte* bytes, size_t max_bytes) {
-	if (bytes[0] == 0x39) {
-		return 2;
-	}
-
-	return -1;
-}
-
-void cmp_r_r(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
-	register_e reg1 = (bytes[1] >> 0) & 0b00000111;
-	register_e reg2 = (bytes[1] >> 3) & 0b00000111;
-
-	uint32 value1 = cpu->registers[reg1];
-	uint32 value2 = cpu->registers[reg2];
-
-	bool cf = 0, zf = 0, sf = 0;
-
-	if (value1 < value2) { // unsigned overflow
-		cf = true;
-	}
-
-	value1 -= value2;
-
-	printf("value1 = %u\n", value1);
-	
-	if (value1 == 0) {
-		zf = true;
-	}
-
-	if ((value1 & 0x80000000) != 0) { // sign
-		sf = true;
-	}
-
-	// if ((cpu->registers[reg] & 1) == 0) { // parity
-	// 	pf = true;
-	// }
-
-	uint32* eflags = &cpu->registers[REGISTER_EFLAGS];
-
-	*eflags &= ~(0b11000101);
-
-	*eflags |= (uint32)cf << 0;
-	// *eflags |= (uint32)pf << 2;
-	*eflags |= (uint32)zf << 6;
-	*eflags |= (uint32)sf << 7;
-
-	printf("cmp %3s, %3s = %.8b\n", registers_name[reg1], registers_name[reg2], cpu->registers[REGISTER_EFLAGS]);
-}
-
-ssize_t is_add_r_n(const byte* bytes, size_t max_bytes) {
-	if (bytes[0] == 0x83 &&
-		(bytes[1] & 0xf0) == 0xc0) {
-		return 3;
-	}
-
-	return -1;
-}
-
-void add_r_n(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
-	register_e reg = bytes[1] & 0b00000111;
-
-	char value = (char)(bytes[2]);
-
-	cpu->registers[reg] += value;
-
-	bool cf = 0, zf = 0, of = 0;
-
-	if (cpu->registers[reg] < value) { // unsigned overflow
-		cf = true;
-	}
-	
-	if (cpu->registers[reg] == 0) {
-		zf = true;
-	}
-
-	if (cpu->registers[reg] & 0x80000000) { // sign
-		of = true;
-	}
-
-	// if ((cpu->registers[reg1] & 1) == 0) { // parity
-	// 	pf = true;
-	// }
-
-	uint32* eflags = &cpu->registers[REGISTER_EFLAGS];
-
-	*eflags &= ~(0b100011000101);
-
-	*eflags |= (uint32)cf << 0;
-	// *eflags |= (uint32)pf << 2;
-	*eflags |= (uint32)zf << 6;
-	*eflags |= (uint32)of << 11;
-
-	printf("add %3s, %i\n", registers_name[reg], (int)value);
-}
-
-ssize_t is_sub_r_n(const byte* bytes, size_t max_bytes) {
-	if (bytes[0] == 0x83 &&
-		(bytes[1] & 0xf0) == 0xe0) {
-		return 3;
-	}
-
-	return -1;
-}
-
-void sub_r_n(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
-	register_e reg = bytes[1] & 0b00000111;
-
-	char value = (char)(bytes[2]);
-
-	cpu->registers[reg] -= value;
-
-	bool cf = 0, zf = 0, of = 0;
-
-	if (cpu->registers[reg] >= value) { // unsigned overflow
-		cf = true;
-	}
-	
-	if (cpu->registers[reg] == 0) {
-		zf = true;
-	}
-
-	if (cpu->registers[reg] & 0x80000000) { // sign
-		of = true;
-	}
-
-	// if ((cpu->registers[reg1] & 1) == 0) { // parity
-	// 	pf = true;
-	// }
-
-	uint32* eflags = &cpu->registers[REGISTER_EFLAGS];
-
-	*eflags &= ~(0b100011000101);
-
-	*eflags |= (uint32)cf << 0;
-	// *eflags |= (uint32)pf << 2;
-	*eflags |= (uint32)zf << 6;
-	*eflags |= (uint32)of << 11;
-
-	printf("sub %3s, %i\n", registers_name[reg], (int)value);
-}
-
-ssize_t is_push_r(const byte* bytes, size_t max_bytes) {
-	if ((bytes[0] & 0xf0) == 0x50 &&
-		(bytes[0] & 0x08) == 0) {
-		return 1;
-	}
-	
-	return -1;
-}
-
-void push_r(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
-	register_e reg = bytes[0] & 0b00000111;
-
-	cpu->ram[cpu->registers[REGISTER_ESP] + 0] = (cpu->registers[reg] >> 0) & 0xFF;
-	cpu->ram[cpu->registers[REGISTER_ESP] + 1] = (cpu->registers[reg] >> 8) & 0xFF;
-	cpu->ram[cpu->registers[REGISTER_ESP] + 2] = (cpu->registers[reg] >> 16) & 0xFF;
-	cpu->ram[cpu->registers[REGISTER_ESP] + 3] = (cpu->registers[reg] >> 24) & 0xFF;
-
-	cpu->registers[REGISTER_ESP] -= 4;
-
-	printf("push %3s\n", registers_name[reg]);
-}
-
-ssize_t is_pop_r(const byte* bytes, size_t max_bytes) {
-	if ((bytes[0] & 0xf0) == 0x50 &&
-		(bytes[0] & 0x08) != 0) {
-		return 1;
-	}
-	
-	return -1;
-}
-
-void pop_r(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
-	register_e reg = bytes[0] & 0b00000111;
-
-	cpu->registers[reg] = 0;
-
-	cpu->registers[REGISTER_ESP] += 4;
-
-	cpu->registers[reg] |= (uint32)(cpu->ram[cpu->registers[REGISTER_ESP] + 0]) << 0;
-	cpu->registers[reg] |= (uint32)(cpu->ram[cpu->registers[REGISTER_ESP] + 1]) << 8;
-	cpu->registers[reg] |= (uint32)(cpu->ram[cpu->registers[REGISTER_ESP] + 2]) << 16;
-	cpu->registers[reg] |= (uint32)(cpu->ram[cpu->registers[REGISTER_ESP] + 3]) << 24;
-
-	printf("pop %3s\n", registers_name[reg]);
-}
-
-void cpu_dump(cpu_t* cpu) {
-	for (size_t i = 0; i < REGISTERS_CNT; i++) {
-		printf("%-6s = 0x%.9x │ %.10u │ %.32b\n", registers_name[i], cpu->registers[i], cpu->registers[i], cpu->registers[i]);
-	}
-}
-
-int main(int argc, const char** argv) {
-	if (!argv || argc <= 1) {
-		printf("Too few arguments, needing program binary file\n");
+	if ((argc - last) < 1 || (argc - last) > 1) {
+		printf("Usage:\n\r");
+		printf("    %s [flags: -d] [binary file to execute]\n\r", argv[0]);
 
 		return 1;
 	}
 	
-	if (argc >= 3) {
-		printf("Too few arguments, needing program binary file\n");
-
-		return 1;
-	}
-	
-	if (!argv[1]) {
-		printf("File have nullptr name.\n");
+	if (!argv[last]) {
+		printf("Invalid file name (nullptr).\n\r");
 
 		return 1;
 	}
 
-	FILE* program_file = fopen(argv[1], "r");
+	FILE* program_file = fopen(argv[last], "r");
 
 	if (!program_file) {
-		perror("File opening error");
+		char buf[32] = { 0 };
+
+		snprintf(buf, 32, "File \"%s\" opening error", argv[last + 1]);
+
+		perror(buf);
 		
 		return 1;
 	}
@@ -546,79 +86,184 @@ int main(int argc, const char** argv) {
 
 	memset(cpu, 0, sizeof(cpu_t));
 
-	size_t ram_size = 8192;
+	size_t ram_size = 8 * 1024 * 1024;
 
 	cpu->ram = malloc(ram_size);
+	cpu->ram_size = ram_size;
 
 	memset(cpu->ram, 0, ram_size);
 
-	fread(cpu->ram + 0x1000, MIN(ram_size - 0x1000, program_size), 1, program_file);
+	cpu->cur_reg_mode = CPU_MODE_32_BITS;
+	cpu->cur_address_mode = CPU_MODE_32_BITS;
+
+	size_t program_start = 0x100000;
+
+	size_t executed_insts = 0;
+
+	fread(cpu->ram + program_start, MIN(ram_size - program_start, program_size), 1, program_file);
 
 	fclose(program_file);
 
-	cpu->registers[REGISTER_EIP] = 0x1000;
+	cpu->registers[REGISTER_EIP] = program_start;
+	
+	// const byte data[] = {0xe8, 0xfb, 0xff, 0xff, 0xff};
 
-	uint32* eip = &(cpu->registers[REGISTER_EIP]);
+	// memcpy(cpu->ram + program_start, data, 5);
 
-	size_t program_end = 0x1000 + program_size;
+	size_t program_end = program_start + program_size;
 
-	while (*eip >= 0x1000 && *eip < program_end) {
-		ssize_t bytes = -1;
+	bool show_remaining_opcodes_if_invalid = true;
 
-		opcode_t opcode = { 0 };
+	while (cpu->eip >= program_start && cpu->eip < program_end) {
+		size_t real_bytes = 0; ssize_t bytes = -1;
+
+		instruction_t instruction = { 0 };
+
+		cpu_mode_e src_reg_mode 	= cpu->cur_reg_mode;
+		cpu_mode_e src_address_mode = cpu->cur_address_mode;
+
+		bool prefix_ok = (cpu->ram[cpu->eip] == 0x66 || cpu->ram[cpu->eip] == 0x67);
+
+		uint32 st_eip = cpu->eip;
+
+		while (prefix_ok) {
+			if (cpu->ram[cpu->eip] == 0x66) {
+				cpu->cur_reg_mode = CPU_MODE_16_BITS;
+
+				cpu->eip++;
+
+				real_bytes++;
+			}
+
+			if (cpu->ram[cpu->eip] == 0x67) {
+				cpu->cur_address_mode = CPU_MODE_16_BITS;
+
+				cpu->eip++;
+
+				real_bytes++;
+			}
+
+			prefix_ok = (cpu->ram[cpu->eip] == 0x66 || cpu->ram[cpu->eip] == 0x67);
+		}
 
 		for (size_t i = 0; i < opcodes_cnt; i++) {
-			if (!opcodes[i].handler || !opcodes[i].is) continue;
+			if (!instructions[i].handler || !instructions[i].is || !instructions[i].disassemble) continue;
 
-			bytes = opcodes[i].is(cpu->ram + *eip, program_end - *eip);
+			bytes = instructions[i].is(cpu, cpu->ram + cpu->eip, program_end - cpu->eip);
 
-			if (bytes != -1) {
-				opcode = opcodes[i];
+			if (bytes > 0) {
+				instruction = instructions[i];
+
+				real_bytes += bytes;
 
 				break;
 			}
 		}
 
-		if (bytes == -1) {
-			cpu_dump(cpu);
-			
-			printf("invalid opcode ");
+		if (bytes == -1 && (only_disassembling || quite)) {
+			printf("invalid opcode\n");
 
-			uint32 st_eip = *eip;
+			printf("Remaining opcodes: ");
 
-			while (bytes == -1 && *eip >= 0x1000 && *eip < program_end) {
-				for (size_t i = 0; i < opcodes_cnt; i++) {
-					if (!opcodes[i].handler || !opcodes[i].is) continue;
-
-					bytes = opcodes[i].is(cpu->ram + *eip, program_end - *eip);
-
-					if (bytes != -1) {
-						opcode = opcodes[i];
-
-						break;
-					}
+			if (show_remaining_opcodes_if_invalid) {
+				for (size_t i = 0; i <= MIN(80, program_end - cpu->eip); i++) {
+					printf("%.2x ", cpu->ram[cpu->eip + i]);
 				}
 
-				*eip += 1;
+				printf("\n");
 			}
 
-			for (size_t i = st_eip; i <= MIN(program_end, *eip); i++) {
-				printf("%.2x", cpu->ram[i]);
+			if (force) {
+				cpu->eip += 1;
 			}
 
-			printf("\n");
-
-			return 1;
+			else break;
 		}
 
-		if (!opcode.handler) continue;
+		else if (bytes == -1) {
+			printf("invalid opcode\n");
+			
+			cpu_dump(cpu);
+			
+			printf("Stack dump:\n\r");
 
-		opcode.handler(cpu, cpu->ram + *eip, program_end - *eip);	
+			if (cpu->esp > cpu->ebp) {
+				printf("    Stack corrupted (or not initialized)\n\r");
+			}
 
-		*eip += bytes;
+			else {
+				for (uint32 i = cpu->esp; i <= cpu->ebp; i += 4) {
+					uint32 val = 	(cpu->ram[i + 0] << 0) | 
+									(cpu->ram[i + 1] << 8) | 
+									(cpu->ram[i + 2] << 16) | 
+									(cpu->ram[i + 3] << 24);
+
+					printf("    [%.8x] = 0x%.9x │ %.10u │ 0b%.32b\n", i, val, val, val);
+				}
+			}
+			
+			if (show_remaining_opcodes_if_invalid) {
+				printf("Remaining opcodes: ");
+
+				for (size_t i = 0; i <= MIN(80, program_end - cpu->eip); i++) {
+					printf("%.2x ", cpu->ram[cpu->eip + i]);
+				}
+
+				printf("\n");
+			}
+
+			if (force) {
+				cpu->eip += 1;
+			}
+
+			else break;
+		}
+
+		if (!instruction.handler) continue;
+
+		executed_insts += 1;
+
+		printf("[%.8x]", st_eip);
+
+		for (size_t i = 0; i < 7; i++) {
+			printf(" ");
+		}
+
+		const char* disassembled = instruction.disassemble(cpu, cpu->ram + cpu->eip, program_end - cpu->eip);
+
+		printf("0x");
+		
+		for (size_t i = 0; i < real_bytes; i++) {
+			printf("%.2x", cpu->ram[st_eip + i]);
+		}
+
+		if (real_bytes < 13) {
+			for (size_t i = 0; i < (13 - real_bytes); i++) {
+				printf(" ");
+			}
+		}
+
+		// printf("│");
+
+		if (real_bytes < 13) {
+			for (size_t i = 0; i < (13 - real_bytes); i++) {
+				printf(" ");
+			}
+		}
+
+		printf("%s\n", disassembled);
+
+		if (!only_disassembling) {
+			instruction.handler(cpu, cpu->ram + cpu->eip, program_end - cpu->eip);	
+		}
+
+		cpu->eip += bytes;
+
+		cpu->cur_reg_mode = src_reg_mode;
+		cpu->cur_address_mode = src_address_mode;
 	}
 
-	// cpu_dump(cpu);
+	printf("executed %zu instructions │ cpu clock (tsc) = %llu\n", executed_insts, cpu->clock);
 
 	free(cpu->ram);
 
