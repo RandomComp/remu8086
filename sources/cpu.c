@@ -5,6 +5,8 @@
 
 #include <stdio.h>
 
+// TODO: Заменить *(const uint32*)(const void*)(bytes + 1) на ручной сбор байтов
+
 ssize_t is_nop(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
 	if (bytes[0] == 0x90) {
 		return 1;
@@ -24,8 +26,37 @@ const char* nop_disassemble(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
 static char disassemble_buf[32] = { 0 };
 
 ssize_t is_mov_modrn(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
-	if (bytes[0] == 0x89 &&
-		(bytes[1] & 0xc0) == 0xc0) {
+	if (bytes[0] != 0x89) return -1;
+	
+	modrm_t mod = *(const modrm_t*)(bytes + 1);
+
+	if (mod.mod == 0b11) {
+		return 2;
+	}
+
+	else if (mod.reg_or_mem == 0b100) {
+		size_t index = 2 + parse_sib(nullptr, mod.mod, cpu, bytes + 2, max_bytes - 2);	
+
+		if (mod.mod == 0b01) {
+			index += 1;
+		}
+
+		if (mod.mod == 0b10) {
+			index += 4;
+		}
+
+		return index;
+	}
+
+	if (mod.mod == 0b01) {
+		return 3;
+	}
+
+	if (mod.mod == 0b10) {
+		return 6;
+	}
+	
+	if (mod.mod == 0b00) {
 		return 2;
 	}
 
@@ -33,25 +64,98 @@ ssize_t is_mov_modrn(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
 }
 
 void mov_modrn(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
-	register_e reg1 = (bytes[1] >> 0) & 0b00000111;
-	register_e reg2 = (bytes[1] >> 3) & 0b00000111;
+	modrm_t* mod = (modrm_t*)(bytes + 1);
 
-	cpu->registers[reg1] = cpu->registers[reg2];
+	if (mod->mod == 0b11) {
+		cpu->registers[mod->reg_or_mem] = cpu->registers[mod->reg];
 
-	cpu->clock += 1;
+		cpu->clock += 1;
+	}
+
+	if (mod->mod == 0b01) {
+		char offset = (char)bytes[2];
+		
+		write_dword(cpu, cpu->registers[mod->reg_or_mem] + offset, cpu->registers[mod->reg]);
+	}
+
+	if (mod->mod == 0b10) {
+		int32 offset = 	((uint32)bytes[2] << 0) |
+						((uint32)bytes[3] << 8) |
+						((uint32)bytes[4] << 16)|
+						((uint32)bytes[5] << 24);
+		
+		write_dword(cpu, cpu->registers[mod->reg_or_mem] + offset, cpu->registers[mod->reg]);
+	}
+
+	if (mod->mod == 0b00) {
+		if (cpu->cur_reg_mode == CPU_MODE_32_BITS) {
+			write_dword(cpu, cpu->registers[mod->reg_or_mem], cpu->registers[mod->reg]);
+		}
+
+		else if (cpu->cur_reg_mode == CPU_MODE_16_BITS) {
+			write_word(cpu, cpu->registers[mod->reg_or_mem], cpu->registers[mod->reg]);
+		}
+	}
 }
 
 const char* mov_modrn_disassemble(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
-	register_e reg1 = (bytes[1] >> 0) & 0b00000111;
-	register_e reg2 = (bytes[1] >> 3) & 0b00000111;
+	modrm_t mod = *(const modrm_t*)(bytes + 1);
 
-	snprintf(disassemble_buf, 16, "mov %3s, %3s", registers_name[reg1], registers_name[reg2]);
+	if (mod.mod == 0b11) {
+		snprintf(disassemble_buf, 32, "mov %s, %s", registers_name[mod.reg_or_mem], registers_name[mod.reg]);
+	}
+
+	else if (mod.reg_or_mem == 0b100) {
+		int32 offset = 0;
+
+		size_t index = 2 + parse_sib(nullptr, mod.mod, cpu, bytes + 2, max_bytes - 2);	
+
+		if (mod.mod == 0b01) {
+			offset = (int32)((char)bytes[index]);
+		}
+
+		if (mod.mod == 0b10) {
+			offset = 	((uint32)bytes[index + 0] << 0) |
+						((uint32)bytes[index + 1] << 8) |
+						((uint32)bytes[index + 2] << 16)|
+						((uint32)bytes[index + 3] << 24);
+		}
+
+		snprintf(disassemble_buf, 32, "mov dword [%s%+i], %s", sib_disassemble(mod.mod, cpu, bytes + 2, max_bytes - 2), offset, registers_name[mod.reg]);
+		
+		return disassemble_buf;
+	}
+
+	if (mod.mod == 0b01) {
+		char offset = (char)bytes[2];
+		
+		snprintf(disassemble_buf, 32, "mov dword [%s%+i], %s", registers_name[mod.reg_or_mem], offset, registers_name[mod.reg]);
+	}
+
+	if (mod.mod == 0b10) {
+		int32 offset = 	((uint32)bytes[2] << 0) |
+						((uint32)bytes[3] << 8) |
+						((uint32)bytes[4] << 16)|
+						((uint32)bytes[5] << 24);
+		
+		snprintf(disassemble_buf, 32, "mov dword [%s%+i], %s", registers_name[mod.reg_or_mem], offset, registers_name[mod.reg]);
+	}
+
+	if (mod.mod == 0b00) {
+		if (cpu->cur_reg_mode == CPU_MODE_32_BITS) {
+			snprintf(disassemble_buf, 32, "mov dword [%s], %s", registers_name[mod.reg_or_mem], registers_name[mod.reg]);
+		}
+
+		else if (cpu->cur_reg_mode == CPU_MODE_16_BITS) {
+			snprintf(disassemble_buf, 32, "mov word [%s], %s", registers_name[mod.reg_or_mem], registers_name[REGISTER_AX + mod.reg]);
+		}
+	}
 
 	return disassemble_buf;
 }
 
 ssize_t is_mov_n_to_r(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
-	if ((bytes[0] & 0xB8) == 0xB8) {
+	if ((bytes[0] & 0xf0) == 0xb0) {
 		return 5;
 	}
 
@@ -178,44 +282,6 @@ const char* mov_mem_n_eax_disassemble(cpu_t* cpu, const byte* bytes, size_t max_
 	return disassemble_buf;
 }
 
-ssize_t is_mov_mem_r_r(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
-	if (bytes[0] == 0x89 &&
-		bytes[1] < 0x40 &&
-		bytes[1] != 0x24) {
-		return 2;
-	}
-
-	return -1;
-}
-
-void mov_mem_r_r(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
-	register_e reg1 = (bytes[1] >> 0) & 0b00000111;
-	register_e reg2 = (bytes[1] >> 3) & 0b00000111;
-
-	if (cpu->cur_reg_mode == CPU_MODE_32_BITS) {
-		write_dword(cpu, cpu->registers[reg1], cpu->ext_regs[reg2].val);
-	}
-
-	else if (cpu->cur_reg_mode == CPU_MODE_16_BITS) {
-		write_word(cpu, cpu->registers[reg1], cpu->ext_regs[reg2].l);
-	}
-}
-
-const char* mov_mem_r_r_disassemble(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
-	register_e reg1 = (bytes[1] >> 0) & 0b00000111;
-	register_e reg2 = (bytes[1] >> 3) & 0b00000111;
-
-	if (cpu->cur_reg_mode == CPU_MODE_32_BITS) {
-		snprintf(disassemble_buf, 32, "mov dword [%3s], %3s", registers_name[reg1], registers_name[reg2]);
-	}
-
-	else if (cpu->cur_reg_mode == CPU_MODE_16_BITS) {
-		snprintf(disassemble_buf, 32, "mov word [%3s], %3s", registers_name[reg1], registers_name[REGISTER_AX + reg2]);
-	}
-
-	return disassemble_buf;
-}
-
 ssize_t is_mov_eax_mem_n(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
 	if (bytes[0] == 0xa1) {
 		if (cpu->cur_reg_mode == CPU_MODE_16_BITS) {
@@ -276,52 +342,216 @@ const char* mov_r_mem_n_disassemble(cpu_t* cpu, const byte* bytes, size_t max_by
 
 	uint32 number = *(const uint32*)(const void*)(bytes + 2);
 	
-	snprintf(disassemble_buf, 32, "mov %3s, dword [%u]", registers_name[reg], number);
+	snprintf(disassemble_buf, 32, "mov %s, dword [%u]", registers_name[reg], number);
 
 	return disassemble_buf;
 }
 
-ssize_t is_mov_r_mem_r_offset(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
-	if (bytes[0] == 0x8b && (bytes[1] & 0x40) != 0) {
+size_t parse_sib(int32* addr, byte mod, cpu_t* cpu, const byte* bytes, size_t max_bytes) {
+	if (max_bytes == 0) return -1;
+
+	sib_t sib = *(const sib_t*)(bytes);
+		
+	if (sib.base_reg == 0b101 && mod == 0b00) {
+		int32 result = 	((uint32)bytes[1] << 0) |
+						((uint32)bytes[2] << 8) |
+						((uint32)bytes[3] << 16) |
+						((uint32)bytes[4] << 24);
+		
+		if (sib.index_reg != 0b100) {
+			result += cpu->registers[sib.index_reg] << sib.scale;
+		}
+
+		if (addr) *addr = result;
+
+		return 5;
+	}
+
+	else if (sib.index_reg != 0b100) {
+		int32 result = cpu->registers[sib.base_reg];
+
+		result += cpu->registers[sib.index_reg] << sib.scale;
+
+		if (addr) *addr = result;
+
+		return 1;
+	}
+
+	else {
+		if (addr) *addr = cpu->registers[sib.base_reg];
+
+		return 1;
+	}
+
+	return 0;
+}
+
+static char sib_buf[16] = { 0 };
+
+const char* sib_disassemble(byte mod, cpu_t* cpu, const byte* bytes, size_t max_bytes) {
+	if (max_bytes == 0) return 0;
+
+	sib_t sib = *(const sib_t*)(bytes);
+		
+	if (sib.base_reg == 0b101 && mod == 0b00) {
+		int32 base = 	((uint32)bytes[1] << 0) |
+						((uint32)bytes[2] << 8) |
+						((uint32)bytes[3] << 16)|
+						((uint32)bytes[4] << 24);
+		
+		if (sib.index_reg != 0b100) {
+			snprintf(sib_buf, 16, "%s*%u%+i", registers_name[sib.index_reg], 1 << sib.scale, base);
+		}
+
+		else {
+			snprintf(sib_buf, 16, "%u", base);
+		}
+	}
+
+	else if (sib.index_reg != 0b100) {
+		snprintf(sib_buf, 16, "%s*%u+%s", registers_name[sib.index_reg], 1 << sib.scale, registers_name[sib.base_reg]);
+	}
+
+	else {
+		snprintf(sib_buf, 16, "%s", registers_name[sib.base_reg]);
+	}
+
+	return sib_buf;
+}
+
+ssize_t is_mov_r_mem_r(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
+	if (bytes[0] != 0x8b) return -1;
+
+	modrm_t mod = *(const modrm_t*)(bytes + 1);
+
+	if (mod.mod != 0b11 &&
+		mod.reg_or_mem == 0b100) {
+		size_t next_byte = 2 + parse_sib(nullptr, mod.mod, cpu, bytes + 2, max_bytes < 2 ? 0 : max_bytes - 2);
+
+		if (mod.mod == 0b01) {
+			next_byte += 1;
+		}
+
+		else if (mod.mod == 0b10) {
+			next_byte += 4;
+		}
+
+		return next_byte;
+	}
+
+	if (mod.mod == 0b01) {
 		return 3;
+	}
+
+	else if (mod.mod == 0b10) {
+		return 6;
 	}
 
 	return -1;
 }
 
-void mov_r_mem_r_offset(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
-	register_e reg1 = (bytes[1] >> 3) & 0b00000111;
-	register_e reg2 = (bytes[1] >> 0) & 0b00000111;
+void mov_r_mem_r(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
+	// register_e reg1 = (bytes[1] >> 3) & 0b00000111;
+	// register_e reg2 = (bytes[1] >> 0) & 0b00000111;
 
-	// TODO: Обработатывать SiB
+	modrm_t mod = *(const modrm_t*)(bytes + 1);
 
-	char offset = (char)bytes[2];
+	int32 base = 0;
+
+	if (mod.mod != 0b11 &&
+		mod.reg_or_mem == 0b100) {
+		size_t next_byte = 2 + parse_sib(&base, mod.mod, cpu, bytes + 2, max_bytes < 2 ? 0 : max_bytes - 2);
+
+		if (mod.mod == 0b01) {
+			base += (int32)((char)bytes[next_byte]);
+		}
+
+		else if (mod.mod == 0b10) {
+			base += (uint32)(bytes[next_byte + 0] << 0) |
+					(uint32)(bytes[next_byte + 1] << 8) |
+					(uint32)(bytes[next_byte + 2] << 16)|
+					(uint32)(bytes[next_byte + 3] << 24);
+		}
+
+		if (cpu->cur_reg_mode == CPU_MODE_32_BITS) {
+			cpu->ext_regs[mod.reg].val = read_dword(cpu, base);
+		}
+
+		else if (cpu->cur_reg_mode == CPU_MODE_16_BITS) {
+			cpu->ext_regs[mod.reg].l = read_word(cpu, base);
+		}
+
+		cpu->clock += 1;
+
+		return;
+	}
+
+	if (mod.mod == 0b01) {
+		base += (int32)((char)bytes[2]);
+	}
+
+	else if (mod.mod == 0b10) {
+		base += (uint32)(bytes[2] << 0) |
+				(uint32)(bytes[3] << 8) |
+				(uint32)(bytes[4] << 16)|
+				(uint32)(bytes[5] << 24);
+	}
 
 	if (cpu->cur_reg_mode == CPU_MODE_32_BITS) {
-		cpu->registers[reg1] = read_dword(cpu, cpu->registers[reg2] + offset);
+		cpu->ext_regs[mod.reg].val = read_dword(cpu, cpu->registers[mod.reg_or_mem] + base);
 	}
 
 	else if (cpu->cur_reg_mode == CPU_MODE_16_BITS) {
-		cpu->registers[reg1] = read_word(cpu, cpu->registers[reg2] + offset);
+		cpu->ext_regs[mod.reg].l = read_word(cpu, cpu->registers[mod.reg_or_mem] + base);
 	}
 
 	cpu->clock += 1;
 }
 
-const char* mov_r_mem_r_offset_disassemble(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
-	register_e reg1 = (bytes[1] >> 3) & 0b00000111;
-	register_e reg2 = (bytes[1] >> 0) & 0b00000111;
+const char* mov_r_mem_r_disassemble(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
+	modrm_t mod = *(const modrm_t*)(bytes + 1);
 
-	char offset = (char)bytes[2];
+	int32 base = 0;
 
-	size_t addr_size = 4;
+	if (mod.mod != 0b11 &&
+		mod.reg_or_mem == 0b100) {
+		size_t next_byte = 2 + parse_sib(nullptr, mod.mod, cpu, bytes + 2, max_bytes - 2);
 
-	if (cpu->cur_reg_mode == CPU_MODE_16_BITS) {
-		addr_size = 2;
+		if (mod.mod == 0b01) {
+			base = (int32)((char)bytes[next_byte]);
+		}
+
+		else if (mod.mod == 0b10) {
+			base = 	(uint32)(bytes[next_byte + 0] << 0) |
+					(uint32)(bytes[next_byte + 1] << 8) |
+					(uint32)(bytes[next_byte + 2] << 16)|
+					(uint32)(bytes[next_byte + 3] << 24);
+		}
+
+		snprintf(disassemble_buf, 32, "mov %s, %s [%s%+i]", registers_name[mod.reg], cpu->cur_reg_mode == CPU_MODE_32_BITS ? "dword" : "word", sib_disassemble(mod.mod, cpu, bytes + 2, max_bytes - 2), base);
+	
+		return disassemble_buf;
+	}
+
+	if (mod.mod == 0b01) {
+		base = (int32)((char)bytes[2]);
+	}
+
+	else if (mod.mod == 0b10) {
+		base = 	(uint32)(bytes[2] << 0) |
+				(uint32)(bytes[3] << 8) |
+				(uint32)(bytes[4] << 16)|
+				(uint32)(bytes[5] << 24);
+	}
+
+	if (cpu->cur_reg_mode == CPU_MODE_32_BITS) {
+		snprintf(disassemble_buf, 32, "mov %s, dword [%s%+i]", registers_name[mod.reg], registers_name[mod.reg_or_mem], base);
+	}
+
+	else if (cpu->cur_reg_mode == CPU_MODE_16_BITS) {
+		snprintf(disassemble_buf, 32, "mov %s, word [%s%+i]", registers_name[mod.reg], registers_name[mod.reg_or_mem], base);
 	}
 	
-	snprintf(disassemble_buf, 32, "mov %3s, %s [%3s%+i]", registers_name[reg1], addr_size == 4 ? "dword" : "word", registers_name[reg2], offset);
-
 	return disassemble_buf;
 }
 
@@ -349,52 +579,24 @@ const char* lea_r_mem_r_offset_disassemble(cpu_t* cpu, const byte* bytes, size_t
 
 	char offset = (char)(bytes[2]);
 
-	snprintf(disassemble_buf, 32, "lea %3s, dword [%3s%+i]", registers_name[reg1], registers_name[reg2], offset);
+	snprintf(disassemble_buf, 32, "lea %s, dword [%s%+i]", registers_name[reg1], registers_name[reg2], offset);
 
 	return disassemble_buf;
 }
 
-ssize_t is_mov_mem_r_offset_r(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
-	if (bytes[0] == 0x89 &&
-		(bytes[1] & 0x40) != 0 &&
-		(bytes[1] & 0x80) == 0) {
-		return 3;
-	} 
-	
-	return -1;
-}
-
-void mov_mem_r_offset_r(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
-	register_e reg1 = (bytes[1] >> 0) & 0b00000111;
-	register_e reg2 = (bytes[1] >> 3) & 0b00000111;
-
-	char offset = (char)(bytes[2]);
-
-	write_dword(cpu, cpu->registers[reg1] + offset, cpu->registers[reg2]);
-}
-
-const char* mov_mem_r_offset_r_disassemble(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
-	register_e reg1 = (bytes[1] >> 0) & 0b00000111;
-	register_e reg2 = (bytes[1] >> 3) & 0b00000111;
-
-	char offset = (char)(bytes[2]);
-
-	snprintf(disassemble_buf, 32, "mov dword [%3s%+i], %3s", registers_name[reg1], offset, registers_name[reg2]);
-	
-	return disassemble_buf;
-}
-
-ssize_t is_movzx_r_mem_r(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
+ssize_t is_movzsx_r_mem_r(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
 	if (bytes[0] == 0x0f &&
 		(bytes[1] & 0xf0) == 0xb0 &&
 		(bytes[2] & 0xf0) <= 0x30) {
 		return 3;
 	}
 
+	// Сделать movsx
+
 	return -1;
 }
 
-void movzx_r_mem_r(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
+void movzsx_r_mem_r(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
 	register_e reg1 = (bytes[2] >> 3) & 0b00000111;
 	register_e reg2 = (bytes[2] >> 0) & 0b00000111;
 
@@ -409,13 +611,13 @@ void movzx_r_mem_r(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
 	}
 }
 
-const char* movzx_r_mem_r_disassemble(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
+const char* movzsx_r_mem_r_disassemble(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
 	register_e reg1 = (bytes[2] >> 3) & 0b00000111;
 	register_e reg2 = (bytes[2] >> 0) & 0b00000111;
 
 	bool is_byte = (bytes[1] & 1) == 0;
 
-	snprintf(disassemble_buf, 32, "movzx %3s, %s [%3s]", registers_name[reg1], is_byte ? "byte" : "word", registers_name[reg2]);
+	snprintf(disassemble_buf, 32, "movzx %s, %s [%s]", registers_name[reg1], is_byte ? "byte" : "word", registers_name[reg2]);
 
 	return disassemble_buf;
 }
@@ -507,8 +709,6 @@ ssize_t is_vmcall(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
 }
 
 void vmcall(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
-	printf("vmcall\n");
-
 	if (cpu->eax == 0x60) {
 		cpu->eip = 0;
 	}
@@ -684,7 +884,7 @@ const char* cmp_r_n_disassemble(cpu_t* cpu, const byte* bytes, size_t max_bytes)
 
 	char value = (char)(bytes[2]);
 
-	snprintf(disassemble_buf, 32, "cmp %3s, %i", registers_name[reg], (int)value);
+	snprintf(disassemble_buf, 32, "cmp %s, %i", registers_name[reg], (int)value);
 
 	return disassemble_buf;
 }
@@ -723,7 +923,7 @@ const char* cmp_r_r_disassemble(cpu_t* cpu, const byte* bytes, size_t max_bytes)
 	register_e reg1 = (bytes[1] >> 0) & 0b00000111;
 	register_e reg2 = (bytes[1] >> 3) & 0b00000111;
 
-	snprintf(disassemble_buf, 32, "cmp %3s, %3s", registers_name[reg1], registers_name[reg2]);
+	snprintf(disassemble_buf, 32, "cmp %s, %s", registers_name[reg1], registers_name[reg2]);
 
 	return disassemble_buf;
 }
@@ -753,7 +953,7 @@ const char* test_r8_r8_disassemble(cpu_t* cpu, const byte* bytes, size_t max_byt
 	register_e reg1 = (bytes[1] >> 0) & 0b00000011;
 	register_e reg2 = (bytes[1] >> 3) & 0b00000011;
 
-	snprintf(disassemble_buf, 32, "test %3s, %3s", registers_name[REGISTER_AL + reg1], registers_name[REGISTER_AL + reg2]);
+	snprintf(disassemble_buf, 32, "test %s, %s", registers_name[REGISTER_AL + reg1], registers_name[REGISTER_AL + reg2]);
 
 	return disassemble_buf;
 }
@@ -779,7 +979,7 @@ const char* rdtsc_disassemble(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
 	return "rdtsc";
 }
 
-ssize_t is_add_r_n(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
+ssize_t is_add_r_byte_n(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
 	if (bytes[0] == 0x83 &&
 		(bytes[1] & 0xf0) == 0xc0) {
 		return 3;
@@ -788,7 +988,7 @@ ssize_t is_add_r_n(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
 	return -1;
 }
 
-void add_r_n(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
+void add_r_byte_n(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
 	register_e reg = bytes[1] & 0b00000111;
 
 	char value = (char)(bytes[2]);
@@ -808,12 +1008,12 @@ void add_r_n(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
 	cpu->clock += 1;
 }
 
-const char* add_r_n_disassemble(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
+const char* add_r_byte_n_disassemble(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
 	register_e reg = bytes[1] & 0b00000111;
 
 	char value = (char)(bytes[2]);
 
-	snprintf(disassemble_buf, 32, "add %3s, %i", registers_name[reg], (int)value);
+	snprintf(disassemble_buf, 32, "add %s, %i", registers_name[reg], (int)value);
 
 	return disassemble_buf;
 }
@@ -852,7 +1052,7 @@ const char* sub_r_byte_n_disassemble(cpu_t* cpu, const byte* bytes, size_t max_b
 
 	char value = (char)(bytes[2]);
 
-	snprintf(disassemble_buf, 32, "sub %3s, %i", registers_name[reg], value);
+	snprintf(disassemble_buf, 32, "sub %s, %i", registers_name[reg], value);
 
 	return disassemble_buf;
 }
@@ -891,7 +1091,160 @@ const char* sub_r_n_disassemble(cpu_t* cpu, const byte* bytes, size_t max_bytes)
 
 	int32 value = *(const int32*)(const void*)(bytes + 2);
 
-	snprintf(disassemble_buf, 32, "sub %3s, %i", registers_name[reg], value);
+	snprintf(disassemble_buf, 32, "sub %s, %i", registers_name[reg], value);
+
+	return disassemble_buf;
+}
+
+ssize_t is_shift(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
+	if ((bytes[0] == 0xc0 || bytes[0] == 0xc1)) {
+		return 3;
+	}
+	
+	return -1;
+}
+
+void shift(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
+	modrm_t mod = *(modrm_t*)(bytes + 1);
+
+	byte offset = bytes[2] & 31;
+
+	if (mod.mod == 0b11) {
+		byte op = mod.reg;
+
+		if (op == 0) { // rol
+			cpu->registers[mod.reg_or_mem] = 
+				(cpu->registers[mod.reg_or_mem] << offset) | 
+				(cpu->registers[mod.reg_or_mem] >> (32 - offset));
+		}
+
+		else if (op == 1) { // ror
+			cpu->registers[mod.reg_or_mem] = 
+				(cpu->registers[mod.reg_or_mem] >> offset) | 
+				(cpu->registers[mod.reg_or_mem] << (32 - offset));
+		}
+
+		else if (op == 2) { // rcl, not fully supported
+			cpu->registers[mod.reg_or_mem] = 
+				(cpu->registers[mod.reg_or_mem] << (offset + 1)) | 
+				((cpu->registers[mod.reg_or_mem] >> (33 - offset)) << 1) |
+				cpu->cf;
+		}
+
+		else if (op == 3) { // rcr, not fully supported
+			cpu->registers[mod.reg_or_mem] = 
+				(cpu->registers[mod.reg_or_mem] >> (offset - 1)) | 
+				((cpu->registers[mod.reg_or_mem] << (33 - offset)) << 1) |
+				cpu->cf;
+		}
+
+		else if (op == 4) { // shl
+			cpu->cf = cpu->registers[mod.reg_or_mem] & (1 << offset);
+
+			cpu->registers[mod.reg_or_mem] <<= offset;
+		}
+		
+		else if (op == 5) { // shr
+			cpu->cf = cpu->registers[mod.reg_or_mem] & (1 << (32 - offset));
+
+			cpu->registers[mod.reg_or_mem] >>= offset;
+		}
+
+		else if (op == 6) { // sal
+			cpu->registers[mod.reg_or_mem] <<= offset;
+		}
+		
+		else if (op == 7) { // sar
+			cpu->registers[mod.reg_or_mem] >>= offset;
+
+			cpu->registers[mod.reg_or_mem] |= ((1 << offset) - 1) << (32 - offset);
+		}
+
+		cpu->clock += 1;
+	}
+}
+
+const char* shift_disassemble(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
+	modrm_t mod = *(modrm_t*)(bytes + 1);
+
+	byte offset = bytes[2] & 31;
+
+	if (mod.mod == 0b11) {
+		bool dir_r = mod.reg & 1;
+
+		if (dir_r) {
+			snprintf(disassemble_buf, 32, "shr %s, %u", registers_name[mod.reg_or_mem], offset);
+		}
+
+		else {
+			snprintf(disassemble_buf, 32, "shl %s, %u", registers_name[mod.reg_or_mem], offset);
+		}
+	}
+
+	return disassemble_buf;
+}
+
+ssize_t is_or_eax_n(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
+	if (bytes[0] == 0x0d) {
+		return 5;
+	}
+
+	return -1;
+}
+
+void or_eax_n(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
+	uint32 value = 	((uint32)bytes[1] << 0) | 
+					((uint32)bytes[2] << 8) | 
+					((uint32)bytes[3] << 16)| 
+					((uint32)bytes[4] << 24);
+
+	cpu->eax |= value;
+}
+
+const char* or_eax_n_disassemble(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
+	uint32 value = 	((uint32)bytes[1] << 0) | 
+					((uint32)bytes[2] << 8) | 
+					((uint32)bytes[3] << 16)| 
+					((uint32)bytes[4] << 24);
+
+	snprintf(disassemble_buf, 32, "or eax, 0x%x", value);
+
+	return disassemble_buf;
+}
+
+ssize_t is_op_aocbaxc_byte_r_n(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
+	modrm_t mod = *(const modrm_t*)(bytes + 1);
+
+	if (bytes[0] == 0x80 &&
+		mod.reg == 1) { // current time -- only or
+		return 3;
+	}
+
+	return -1;
+}
+
+void op_aocbaxc_byte_r_n(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
+	modrm_t mod = *(const modrm_t*)(bytes + 1);
+
+	if (mod.mod == 0b11) {
+		byte value = bytes[2];
+
+		if (mod.reg == 1) {
+			cpu->registers[mod.reg_or_mem] |= value;
+		}
+	}
+}
+
+const char* op_aocbaxc_byte_r_n_disassemble(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
+	modrm_t mod = *(const modrm_t*)(bytes + 1);
+
+	if (mod.mod == 0b11) {
+		byte value = bytes[2];
+
+		if (mod.reg == 1) {
+			snprintf(disassemble_buf, 32, "or %s, 0b%8b", registers_name[REGISTER_AL + mod.reg_or_mem], value);
+		}
+	}
 
 	return disassemble_buf;
 }
@@ -916,7 +1269,7 @@ void push_r(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
 const char* push_r_disassemble(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
 	register_e reg = bytes[0] & 0b00000111;
 
-	snprintf(disassemble_buf, 32, "push %3s", registers_name[reg]);
+	snprintf(disassemble_buf, 32, "push %s", registers_name[reg]);
 
 	return disassemble_buf;
 }
@@ -941,7 +1294,7 @@ void pop_r(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
 const char* pop_r_disassemble(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
 	register_e reg = bytes[0] & 0b00000111;
 
-	snprintf(disassemble_buf, 32, "pop %3s", registers_name[reg]);
+	snprintf(disassemble_buf, 32, "pop %s", registers_name[reg]);
 
 	return disassemble_buf;
 }

@@ -34,7 +34,7 @@ program:
 
 	@nasm -f elf32 $@.asm -o $@_asm.o
 
-	@gcc -m32 -c $@.c -o $@_c.o -ffreestanding -fno-asynchronous-unwind-tables -masm=intel -fno-pic -fno-pie
+	@gcc -m32 -O0 -c $@.c -o $@_c.o -ffreestanding -fno-asynchronous-unwind-tables -masm=intel -fno-pic -fno-pie
 
 	@ld -m elf_i386 --oformat=binary -Ttext 0x100000 -e entry $@_asm.o $@_c.o -o $@.bin
 

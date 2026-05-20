@@ -9,6 +9,7 @@ typedef _Bool bool;
 #define nullptr (void*)(0)
 
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
+#define MAX(a, b) ((a) > (b) ? (a) : (b))
 
 #define PACKED __attribute__((packed))
 

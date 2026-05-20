@@ -17,7 +17,7 @@ entry:
 
 	mov ebp, esp
 
-	push 500
+	push 0x12345
 	call kmain
 
 	; vmcall

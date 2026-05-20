@@ -10,23 +10,21 @@ typedef enum cpu_mode_e {
 	CPU_MODE_32_BITS,
 } cpu_mode_e;
 
-typedef struct reg_t {
-	union {
-		uint32 val;
+typedef union reg_u {
+	uint32 val;
 
-		struct PACKED {
-			uint16 l;
-			uint16 h;
-		};
-
-		struct PACKED {
-			uint8 ll;
-			uint8 lh;
-			uint8 hl;
-			uint8 hh;
-		};
+	struct PACKED {
+		uint16 l;
+		uint16 h;
 	};
-} reg_t;
+
+	struct PACKED {
+		uint8 ll;
+		uint8 lh;
+		uint8 hl;
+		uint8 hh;
+	};
+} reg_u;
 
 typedef struct cpu_t {
 	union {
@@ -153,7 +151,7 @@ typedef struct cpu_t {
 		union {
 			uint32 registers[16];
 
-			reg_t ext_regs[16];
+			reg_u ext_regs[16];
 		};
 	};
 
@@ -171,10 +169,14 @@ struct instruction_t {
 	ssize_t (*is)(cpu_t* cpu, const byte* bytes, size_t max_bytes);
 	void (*handler)(cpu_t* cpu, const byte* bytes, size_t max_bytes);
 	const char* (*disassemble)(cpu_t* cpu, const byte* bytes, size_t max_bytes);
-	instruction_e inst;
+	instruction_e inst; instruction_mask_e inst_mask;
 };
 
-typedef void (*opcode_handler_t)(cpu_t* cpu, const byte* bytes, size_t max_bytes);
+size_t parse_sib(int32* addr, byte mod, cpu_t* cpu, const byte* bytes, size_t max_bytes);
+
+const char* sib_disassemble(byte mod, cpu_t* cpu, const byte* bytes, size_t max_bytes);
+
+// TODO: Убрать функции реализации, и переместить таблицу в cpu.c, сделав также extern static const instruction_t instructions[]; в cpu.h для доступа из main.h
 
 ssize_t is_nop(cpu_t* cpu, const byte* bytes, size_t max_bytes);
 void nop(cpu_t* cpu, const byte* bytes, size_t max_bytes);
@@ -195,10 +197,6 @@ ssize_t is_mov_mem_n_eax(cpu_t* cpu, const byte* bytes, size_t max_bytes);
 void mov_mem_n_eax(cpu_t* cpu, const byte* bytes, size_t max_bytes);
 const char* mov_mem_n_eax_disassemble(cpu_t* cpu, const byte* bytes, size_t max_bytes);
 
-ssize_t is_mov_mem_r_r(cpu_t* cpu, const byte* bytes, size_t max_bytes);
-void mov_mem_r_r(cpu_t* cpu, const byte* bytes, size_t max_bytes);
-const char* mov_mem_r_r_disassemble(cpu_t* cpu, const byte* bytes, size_t max_bytes);
-
 ssize_t is_mov_eax_mem_n(cpu_t* cpu, const byte* bytes, size_t max_bytes);
 void mov_eax_mem_n(cpu_t* cpu, const byte* bytes, size_t max_bytes);
 const char* mov_eax_mem_n_disassemble(cpu_t* cpu, const byte* bytes, size_t max_bytes);
@@ -207,21 +205,17 @@ ssize_t is_mov_r_mem_n(cpu_t* cpu, const byte* bytes, size_t max_bytes);
 void mov_r_mem_n(cpu_t* cpu, const byte* bytes, size_t max_bytes);
 const char* mov_r_mem_n_disassemble(cpu_t* cpu, const byte* bytes, size_t max_bytes);
 
-ssize_t is_mov_r_mem_r_offset(cpu_t* cpu, const byte* bytes, size_t max_bytes);
-void mov_r_mem_r_offset(cpu_t* cpu, const byte* bytes, size_t max_bytes);
-const char* mov_r_mem_r_offset_disassemble(cpu_t* cpu, const byte* bytes, size_t max_bytes);
+ssize_t is_mov_r_mem_r(cpu_t* cpu, const byte* bytes, size_t max_bytes);
+void mov_r_mem_r(cpu_t* cpu, const byte* bytes, size_t max_bytes);
+const char* mov_r_mem_r_disassemble(cpu_t* cpu, const byte* bytes, size_t max_bytes);
 
 ssize_t is_lea_r_mem_r_offset(cpu_t* cpu, const byte* bytes, size_t max_bytes);
 void lea_r_mem_r_offset(cpu_t* cpu, const byte* bytes, size_t max_bytes);
 const char* lea_r_mem_r_offset_disassemble(cpu_t* cpu, const byte* bytes, size_t max_bytes);
 
-ssize_t is_mov_mem_r_offset_r(cpu_t* cpu, const byte* bytes, size_t max_bytes);
-void mov_mem_r_offset_r(cpu_t* cpu, const byte* bytes, size_t max_bytes);
-const char* mov_mem_r_offset_r_disassemble(cpu_t* cpu, const byte* bytes, size_t max_bytes);
-
-ssize_t is_movzx_r_mem_r(cpu_t* cpu, const byte* bytes, size_t max_bytes);
-void movzx_r_mem_r(cpu_t* cpu, const byte* bytes, size_t max_bytes);
-const char* movzx_r_mem_r_disassemble(cpu_t* cpu, const byte* bytes, size_t max_bytes);
+ssize_t is_movzsx_r_mem_r(cpu_t* cpu, const byte* bytes, size_t max_bytes);
+void movzsx_r_mem_r(cpu_t* cpu, const byte* bytes, size_t max_bytes);
+const char* movzsx_r_mem_r_disassemble(cpu_t* cpu, const byte* bytes, size_t max_bytes);
 
 ssize_t is_mov_modrn(cpu_t* cpu, const byte* bytes, size_t max_bytes);
 void mov_modrn(cpu_t* cpu, const byte* bytes, size_t max_bytes);
@@ -275,9 +269,9 @@ ssize_t is_rdtsc(cpu_t* cpu, const byte* bytes, size_t max_bytes);
 void rdtsc(cpu_t* cpu, const byte* bytes, size_t max_bytes);
 const char* rdtsc_disassemble(cpu_t* cpu, const byte* bytes, size_t max_bytes);
 
-ssize_t is_add_r_n(cpu_t* cpu, const byte* bytes, size_t max_bytes);
-void add_r_n(cpu_t* cpu, const byte* bytes, size_t max_bytes);
-const char* add_r_n_disassemble(cpu_t* cpu, const byte* bytes, size_t max_bytes);
+ssize_t is_add_r_byte_n(cpu_t* cpu, const byte* bytes, size_t max_bytes);
+void add_r_byte_n(cpu_t* cpu, const byte* bytes, size_t max_bytes);
+const char* add_r_byte_n_disassemble(cpu_t* cpu, const byte* bytes, size_t max_bytes);
 
 ssize_t is_sub_r_byte_n(cpu_t* cpu, const byte* bytes, size_t max_bytes);
 void sub_r_byte_n(cpu_t* cpu, const byte* bytes, size_t max_bytes);
@@ -286,6 +280,18 @@ const char* sub_r_byte_n_disassemble(cpu_t* cpu, const byte* bytes, size_t max_b
 ssize_t is_sub_r_n(cpu_t* cpu, const byte* bytes, size_t max_bytes);
 void sub_r_n(cpu_t* cpu, const byte* bytes, size_t max_bytes);
 const char* sub_r_n_disassemble(cpu_t* cpu, const byte* bytes, size_t max_bytes);
+
+ssize_t is_shift(cpu_t* cpu, const byte* bytes, size_t max_bytes);
+void shift(cpu_t* cpu, const byte* bytes, size_t max_bytes);
+const char* shift_disassemble(cpu_t* cpu, const byte* bytes, size_t max_bytes);
+
+ssize_t is_or_eax_n(cpu_t* cpu, const byte* bytes, size_t max_bytes);
+void or_eax_n(cpu_t* cpu, const byte* bytes, size_t max_bytes);
+const char* or_eax_n_disassemble(cpu_t* cpu, const byte* bytes, size_t max_bytes);
+
+ssize_t is_op_aocbaxc_byte_r_n(cpu_t* cpu, const byte* bytes, size_t max_bytes);
+void op_aocbaxc_byte_r_n(cpu_t* cpu, const byte* bytes, size_t max_bytes);
+const char* op_aocbaxc_byte_r_n_disassemble(cpu_t* cpu, const byte* bytes, size_t max_bytes);
 
 ssize_t is_push_r(cpu_t* cpu, const byte* bytes, size_t max_bytes);
 void push_r(cpu_t* cpu, const byte* bytes, size_t max_bytes);
@@ -326,47 +332,47 @@ uint32 read_dword(cpu_t* cpu, uint32 addr);
 
 void cpu_dump(cpu_t* cpu);
 
-// TODO: Сделать группы семейств инструкций для быстрого поиска их по первому байту
-
 static const instruction_t instructions[] = {
-	{.inst = INSTRUCTION_NOP, 						.is =  	is_nop, 				.handler = nop, 				.disassemble = nop_disassemble },
-	{.inst = INSTRUCTION_MOV_MODRN, 				.is =  	is_mov_modrn, 			.handler = mov_modrn, 			.disassemble = mov_modrn_disassemble },
-	{.inst = INSTRUCTION_MOV_R_N, 					.is =  	is_mov_n_to_r, 			.handler = mov_n_to_r, 			.disassemble = mov_n_to_r_disassemble },
-	{.inst = INSTRUCTION_MOV_MEM_R_R,				.is = 	is_mov_mem_r_r, 		.handler = mov_mem_r_r, 		.disassemble = mov_mem_r_r_disassemble},
-	{.inst = INSTRUCTION_MOV_MEM_R_N,				.is = 	is_mov_mem_r_n, 		.handler = mov_mem_r_n, 		.disassemble = mov_mem_r_n_disassemble },
-	{.inst = INSTRUCTION_MOV_MEM_N_EAX, 			.is = 	is_mov_mem_n_eax, 		.handler = mov_mem_n_eax, 		.disassemble = mov_mem_n_eax_disassemble },
-	{.inst = INSTRUCTION_MOV_EAX_MEM_N, 			.is = 	is_mov_eax_mem_n,		.handler = mov_eax_mem_n, 		.disassemble = mov_eax_mem_n_disassemble },
-	{.inst = INSTRUCTION_MOV_R_MEM_N, 				.is = 	is_mov_r_mem_n,			.handler = mov_r_mem_n, 		.disassemble = mov_r_mem_n_disassemble },
-	{.inst = INSTRUCTION_MOV_R_MEM_R_OFFSET, 		.is = 	is_mov_r_mem_r_offset,	.handler = mov_r_mem_r_offset, 	.disassemble = mov_r_mem_r_offset_disassemble},
-	{.inst = INSTRUCTION_LEA_R_MEM_R_OFFSET,		.is = 	is_lea_r_mem_r_offset, 	.handler = lea_r_mem_r_offset, 	.disassemble = lea_r_mem_r_offset_disassemble},
-	{.inst = INSTRUCTION_MOV_MEM_R_OFFSET_R,		.is = 	is_mov_mem_r_offset_r, 	.handler = mov_mem_r_offset_r, 	.disassemble = mov_mem_r_offset_r_disassemble},
-	{.inst = INSTRUCTION_MOVZX_R_MEM_R,				.is = 	is_movzx_r_mem_r,		.handler = movzx_r_mem_r, 		.disassemble = movzx_r_mem_r_disassemble},
-	{.inst = INSTRUCTION_ADD_R_R, 					.is =  	is_add_r_r, 			.handler = add_r_r, 			.disassemble = add_r_r_disassemble },
-	{.inst = INSTRUCTION_SUB_R_R, 					.is =  	is_sub_r_r, 			.handler = sub_r_r, 			.disassemble = sub_r_r_disassemble },
-	{.inst = INSTRUCTION_CMP_R_N, 					.is =  	is_cmp_r_n, 			.handler = cmp_r_n, 			.disassemble = cmp_r_n_disassemble },
-	{.inst = INSTRUCTION_CMP_R_R, 					.is =  	is_cmp_r_r, 			.handler = cmp_r_r, 			.disassemble = cmp_r_r_disassemble },
-	{.inst = INSTRUCTION_TEST_R8_R8, 				.is = 	is_test_r8_r8, 			.handler = test_r8_r8, 			.disassemble = test_r8_r8_disassemble },
-	{.inst = INSTRUCTION_RDTSC, 					.is =  	is_rdtsc, 				.handler = rdtsc, 				.disassemble = rdtsc_disassemble },
-	{.inst = INSTRUCTION_SUB_R_BYTE_N, 				.is =  	is_sub_r_byte_n,		.handler = sub_r_byte_n , 		.disassemble = sub_r_byte_n_disassemble},
-	{.inst = INSTRUCTION_ADD_R_N, 					.is =  	is_add_r_n, 			.handler = add_r_n, 			.disassemble = add_r_n_disassemble },
-	{.inst = INSTRUCTION_SUB_R_N, 					.is =  	is_sub_r_n, 			.handler = sub_r_n, 			.disassemble = sub_r_n_disassemble },
-	{.inst = INSTRUCTION_VMCALL, 					.is =  	is_vmcall, 				.handler = vmcall, 				.disassemble = vmcall_disassemble },
-	{.inst = INSTRUCTION_SHORT_JMP, 				.is =  	is_short_jmp, 			.handler = short_jmp, 			.disassemble = short_jmp_disassemble },
-	{.inst = INSTRUCTION_SHORT_JC, 					.is =  	is_short_jc, 			.handler = short_jc, 			.disassemble = short_jc_disassemble },
-	{.inst = INSTRUCTION_SHORT_JNC, 				.is =  	is_short_jnc, 			.handler = short_jnc, 			.disassemble = short_jnc_disassemble },
-	{.inst = INSTRUCTION_SHORT_JZ, 					.is =  	is_short_jz, 			.handler = short_jz, 			.disassemble = short_jz_disassemble },
-	{.inst = INSTRUCTION_SHORT_JNZ, 				.is =  	is_short_jnz, 			.handler = short_jnz, 			.disassemble = short_jnz_disassemble },
-	{.inst = INSTRUCTION_PUSH_N,					.is =	is_push_n,				.handler = push_n,				.disassemble = push_n_disassemble },
-	{.inst = INSTRUCTION_PUSH_R, 					.is =  	is_push_r, 				.handler = push_r, 				.disassemble = push_r_disassemble },
-	{.inst = INSTRUCTION_POP_R, 					.is =  	is_pop_r, 				.handler = pop_r, 				.disassemble = pop_r_disassemble },
-	{.inst = INSTRUCTION_CALL_N, 					.is =  	is_call_n, 				.handler = call_n, 				.disassemble = call_n_disassemble },
-	{.inst = INSTRUCTION_CBW, 						.is = 	is_cbw, 				.handler = cbw, 				.disassemble = cbw_disassemble },
-	{.inst = INSTRUCTION_RET, 						.is =  	is_ret, 				.handler = ret, 				.disassemble = ret_disassemble },
-	{.inst = INSTRUCTION_LEAVE, 					.is =  	is_leave, 				.handler = leave, 				.disassemble = leave_disassemble },
+	{.inst_mask = INSTRUCTION_MASK_EQUAL, 	.inst = INSTRUCTION_NOP, 					.is =  	is_nop, 				.handler = nop, 				.disassemble = nop_disassemble },
+	{.inst_mask = INSTRUCTION_MASK_EQUAL, 	.inst = INSTRUCTION_MOV_MODRN, 				.is =  	is_mov_modrn, 			.handler = mov_modrn, 			.disassemble = mov_modrn_disassemble },
+	{.inst_mask = INSTRUCTION_MASK_AND,		.inst = INSTRUCTION_MOV_R_N, 				.is =  	is_mov_n_to_r, 			.handler = mov_n_to_r, 			.disassemble = mov_n_to_r_disassemble },
+	{.inst_mask = INSTRUCTION_MASK_EQUAL, 	.inst = INSTRUCTION_MOV_MEM_R_N,			.is = 	is_mov_mem_r_n, 		.handler = mov_mem_r_n, 		.disassemble = mov_mem_r_n_disassemble },
+	{.inst_mask = INSTRUCTION_MASK_EQUAL, 	.inst = INSTRUCTION_MOV_MEM_N_EAX, 			.is = 	is_mov_mem_n_eax, 		.handler = mov_mem_n_eax, 		.disassemble = mov_mem_n_eax_disassemble },
+	{.inst_mask = INSTRUCTION_MASK_EQUAL, 	.inst = INSTRUCTION_MOV_EAX_MEM_N, 			.is = 	is_mov_eax_mem_n,		.handler = mov_eax_mem_n, 		.disassemble = mov_eax_mem_n_disassemble },
+	{.inst_mask = INSTRUCTION_MASK_EQUAL, 	.inst = INSTRUCTION_MOV_R_MEM_N, 			.is = 	is_mov_r_mem_n,			.handler = mov_r_mem_n, 		.disassemble = mov_r_mem_n_disassemble },
+	{.inst_mask = INSTRUCTION_MASK_EQUAL, 	.inst = INSTRUCTION_MOV_R_MEM_R, 			.is = 	is_mov_r_mem_r,			.handler = mov_r_mem_r, 		.disassemble = mov_r_mem_r_disassemble},
+	{.inst_mask = INSTRUCTION_MASK_EQUAL, 	.inst = INSTRUCTION_LEA_R_MEM_R_OFFSET,		.is = 	is_lea_r_mem_r_offset, 	.handler = lea_r_mem_r_offset, 	.disassemble = lea_r_mem_r_offset_disassemble},
+	{.inst_mask = INSTRUCTION_MASK_EQUAL, 	.inst = INSTRUCTION_MOVZSX_R_MEM_R,			.is = 	is_movzsx_r_mem_r,		.handler = movzsx_r_mem_r, 		.disassemble = movzsx_r_mem_r_disassemble},
+	{.inst_mask = INSTRUCTION_MASK_EQUAL, 	.inst = INSTRUCTION_ADD_R_R, 				.is =  	is_add_r_r, 			.handler = add_r_r, 			.disassemble = add_r_r_disassemble },
+	{.inst_mask = INSTRUCTION_MASK_EQUAL, 	.inst = INSTRUCTION_SUB_R_R, 				.is =  	is_sub_r_r, 			.handler = sub_r_r, 			.disassemble = sub_r_r_disassemble },
+	{.inst_mask = INSTRUCTION_MASK_EQUAL, 	.inst = INSTRUCTION_CMP_R_N, 				.is =  	is_cmp_r_n, 			.handler = cmp_r_n, 			.disassemble = cmp_r_n_disassemble },
+	{.inst_mask = INSTRUCTION_MASK_EQUAL, 	.inst = INSTRUCTION_CMP_R_R, 				.is =  	is_cmp_r_r, 			.handler = cmp_r_r, 			.disassemble = cmp_r_r_disassemble },
+	{.inst_mask = INSTRUCTION_MASK_EQUAL, 	.inst = INSTRUCTION_TEST_R8_R8, 			.is = 	is_test_r8_r8, 			.handler = test_r8_r8, 			.disassemble = test_r8_r8_disassemble },
+	{.inst_mask = INSTRUCTION_MASK_EQUAL, 	.inst = INSTRUCTION_RDTSC, 					.is =  	is_rdtsc, 				.handler = rdtsc, 				.disassemble = rdtsc_disassemble },
+	{.inst_mask = INSTRUCTION_MASK_EQUAL, 	.inst = INSTRUCTION_ADD_R_BYTE_N, 			.is =  	is_add_r_byte_n, 		.handler = add_r_byte_n, 		.disassemble = add_r_byte_n_disassemble },
+	{.inst_mask = INSTRUCTION_MASK_EQUAL, 	.inst = INSTRUCTION_SUB_R_BYTE_N, 			.is =  	is_sub_r_byte_n,		.handler = sub_r_byte_n , 		.disassemble = sub_r_byte_n_disassemble},
+	{.inst_mask = INSTRUCTION_MASK_EQUAL, 	.inst = INSTRUCTION_SUB_R_N, 				.is =  	is_sub_r_n, 			.handler = sub_r_n, 			.disassemble = sub_r_n_disassemble },
+	{.inst_mask = INSTRUCTION_MASK_EQUAL, 	.inst = INSTRUCTION_SHIFT_MEM_R_N,			.is = 	is_shift, 				.handler = shift, 				.disassemble = shift_disassemble},
+	{.inst_mask = INSTRUCTION_MASK_EQUAL, 	.inst = INSTRUCTION_SHIFT_R_N,				.is = 	is_shift, 				.handler = shift, 				.disassemble = shift_disassemble},
+	{.inst_mask = INSTRUCTION_MASK_EQUAL,	.inst = INSTRUCTION_OR_EAX_N,				.is = 	is_or_eax_n, 			.handler = or_eax_n, 			.disassemble = or_eax_n_disassemble},
+	{.inst_mask = INSTRUCTION_MASK_EQUAL, 	.inst = INSTRUCTION_OP_AOCBAXC_BYTE_R_N, 	.is = 	is_op_aocbaxc_byte_r_n, .handler = op_aocbaxc_byte_r_n,	.disassemble = op_aocbaxc_byte_r_n_disassemble},
+	{.inst_mask = INSTRUCTION_MASK_EQUAL, 	.inst = INSTRUCTION_VMCALL, 				.is =  	is_vmcall, 				.handler = vmcall, 				.disassemble = vmcall_disassemble },
+	{.inst_mask = INSTRUCTION_MASK_EQUAL, 	.inst = INSTRUCTION_SHORT_JMP, 				.is =  	is_short_jmp, 			.handler = short_jmp, 			.disassemble = short_jmp_disassemble },
+	{.inst_mask = INSTRUCTION_MASK_EQUAL, 	.inst = INSTRUCTION_SHORT_JC, 				.is =  	is_short_jc, 			.handler = short_jc, 			.disassemble = short_jc_disassemble },
+	{.inst_mask = INSTRUCTION_MASK_EQUAL, 	.inst = INSTRUCTION_SHORT_JNC, 				.is =  	is_short_jnc, 			.handler = short_jnc, 			.disassemble = short_jnc_disassemble },
+	{.inst_mask = INSTRUCTION_MASK_EQUAL, 	.inst = INSTRUCTION_SHORT_JZ, 				.is =  	is_short_jz, 			.handler = short_jz, 			.disassemble = short_jz_disassemble },
+	{.inst_mask = INSTRUCTION_MASK_EQUAL, 	.inst = INSTRUCTION_SHORT_JNZ, 				.is =  	is_short_jnz, 			.handler = short_jnz, 			.disassemble = short_jnz_disassemble },
+	{.inst_mask = INSTRUCTION_MASK_EQUAL, 	.inst = INSTRUCTION_PUSH_N,					.is =	is_push_n,				.handler = push_n,				.disassemble = push_n_disassemble },
+	{.inst_mask = INSTRUCTION_MASK_AND, 	.inst = INSTRUCTION_PUSH_R, 				.is =  	is_push_r, 				.handler = push_r, 				.disassemble = push_r_disassemble },
+	{.inst_mask = INSTRUCTION_MASK_AND, 	.inst = INSTRUCTION_POP_R, 					.is =  	is_pop_r, 				.handler = pop_r, 				.disassemble = pop_r_disassemble },
+	{.inst_mask = INSTRUCTION_MASK_EQUAL, 	.inst = INSTRUCTION_CALL_N, 				.is =  	is_call_n, 				.handler = call_n, 				.disassemble = call_n_disassemble },
+	{.inst_mask = INSTRUCTION_MASK_EQUAL, 	.inst = INSTRUCTION_CBW, 					.is = 	is_cbw, 				.handler = cbw, 				.disassemble = cbw_disassemble },
+	{.inst_mask = INSTRUCTION_MASK_EQUAL, 	.inst = INSTRUCTION_RET, 					.is =  	is_ret, 				.handler = ret, 				.disassemble = ret_disassemble },
+	{.inst_mask = INSTRUCTION_MASK_EQUAL, 	.inst = INSTRUCTION_LEAVE, 					.is =  	is_leave, 				.handler = leave, 				.disassemble = leave_disassemble },
 	// {INSTRUCTION_MUL_R, 		is_nop, nop },
 	// {INSTRUCTION_DIV_R, 		is_nop, nop },
 };
 
-static const size_t opcodes_cnt = sizeof(instructions) / sizeof(instructions[0]);
+static const size_t instructions_cnt = sizeof(instructions) / sizeof(instructions[0]);
 
 #endif

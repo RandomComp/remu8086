@@ -31,7 +31,7 @@ int64 align_up(int64 num, int64 align) {
 int main(int argc, char* argv[]) {
 	bool only_disassembling = false, force = false, quite = false;
 
-	int last = 0;
+	int last = -1;
 
 	for (int i = 1; i < argc; i++) {
 		if (strcmp(argv[i], "-d") == 0) {
@@ -53,7 +53,7 @@ int main(int argc, char* argv[]) {
 
 	if ((argc - last) < 1 || (argc - last) > 1) {
 		printf("Usage:\n\r");
-		printf("    %s [flags: -d] [binary file to execute]\n\r", argv[0]);
+		printf("    %s [flags: -d -f -q] [binary file to execute]\n\r", argv[0]);
 
 		return 1;
 	}
@@ -146,8 +146,16 @@ int main(int argc, char* argv[]) {
 			prefix_ok = (cpu->ram[cpu->eip] == 0x66 || cpu->ram[cpu->eip] == 0x67);
 		}
 
-		for (size_t i = 0; i < opcodes_cnt; i++) {
+		for (size_t i = 0; i < instructions_cnt; i++) {
 			if (!instructions[i].handler || !instructions[i].is || !instructions[i].disassemble) continue;
+
+			if (instructions[i].inst_mask == INSTRUCTION_MASK_EQUAL && cpu->ram[cpu->eip] != instructions[i].inst) {
+				continue;
+			}
+
+			if (instructions[i].inst_mask == INSTRUCTION_MASK_AND && (cpu->ram[cpu->eip] & instructions[i].inst) != instructions[i].inst) {
+				continue;
+			}
 
 			bytes = instructions[i].is(cpu, cpu->ram + cpu->eip, program_end - cpu->eip);
 
@@ -160,17 +168,21 @@ int main(int argc, char* argv[]) {
 			}
 		}
 
-		if (bytes == -1 && (only_disassembling || quite)) {
-			printf("invalid opcode\n");
+		if (bytes == -1 && only_disassembling) {
+			if (!quite) {
+				printf("invalid opcode\n");
 
-			printf("Remaining opcodes: ");
+				if (show_remaining_opcodes_if_invalid) {
+					printf("Remaining opcodes: ");
 
-			if (show_remaining_opcodes_if_invalid) {
-				for (size_t i = 0; i <= MIN(80, program_end - cpu->eip); i++) {
-					printf("%.2x ", cpu->ram[cpu->eip + i]);
+					for (size_t i = 0; i <= MIN(80, program_end - cpu->eip); i++) {
+						printf("%.2x ", cpu->ram[cpu->eip + i]);
+					}
+
+					printf("\n");
+					
+					show_remaining_opcodes_if_invalid = false;
 				}
-
-				printf("\n");
 			}
 
 			if (force) {
@@ -181,35 +193,40 @@ int main(int argc, char* argv[]) {
 		}
 
 		else if (bytes == -1) {
-			printf("invalid opcode\n");
+			if (!quite) {
+				printf("invalid opcode\n");
 			
-			cpu_dump(cpu);
-			
-			printf("Stack dump:\n\r");
+				cpu_dump(cpu);
+				
+				printf("Stack dump:\n\r");
 
-			if (cpu->esp > cpu->ebp) {
-				printf("    Stack corrupted (or not initialized)\n\r");
-			}
-
-			else {
-				for (uint32 i = cpu->esp; i <= cpu->ebp; i += 4) {
-					uint32 val = 	(cpu->ram[i + 0] << 0) | 
-									(cpu->ram[i + 1] << 8) | 
-									(cpu->ram[i + 2] << 16) | 
-									(cpu->ram[i + 3] << 24);
-
-					printf("    [%.8x] = 0x%.9x │ %.10u │ 0b%.32b\n", i, val, val, val);
-				}
-			}
-			
-			if (show_remaining_opcodes_if_invalid) {
-				printf("Remaining opcodes: ");
-
-				for (size_t i = 0; i <= MIN(80, program_end - cpu->eip); i++) {
-					printf("%.2x ", cpu->ram[cpu->eip + i]);
+				if (cpu->esp > cpu->ebp || 
+					(cpu->esp == 0 && cpu->ebp == 0)) {
+					printf("    Stack corrupted (or not initialized)\n\r");
 				}
 
-				printf("\n");
+				else {
+					for (uint32 i = cpu->esp; i <= cpu->ebp; i += 4) {
+						uint32 val = 	(cpu->ram[i + 0] << 0) | 
+										(cpu->ram[i + 1] << 8) | 
+										(cpu->ram[i + 2] << 16) | 
+										(cpu->ram[i + 3] << 24);
+
+						printf("    [%.8x] = 0x%.9x │ %.10u │ 0b%.32b\n", i, val, val, val);
+					}
+				}
+			
+				if (show_remaining_opcodes_if_invalid) {
+					printf("Remaining opcodes: ");
+
+					for (size_t i = 0; i <= MIN(80, program_end - cpu->eip); i++) {
+						printf("%.2x ", cpu->ram[cpu->eip + i]);
+					}
+
+					printf("\n");
+						
+					show_remaining_opcodes_if_invalid = false;
+				}
 			}
 
 			if (force) {
@@ -263,7 +280,19 @@ int main(int argc, char* argv[]) {
 		cpu->cur_address_mode = src_address_mode;
 	}
 
-	printf("executed %zu instructions │ cpu clock (tsc) = %llu\n", executed_insts, cpu->clock);
+	if (only_disassembling) {
+		printf("disassembled %zu instructions │ cpu clock (tsc) = %llu\n", executed_insts, cpu->clock);
+	}
+
+	else {
+		printf("executed %zu instructions │ cpu clock (tsc) = %llu\n", executed_insts, cpu->clock);
+	}
+
+	// for (uint32 i = 0; i <= 80; i++) {
+	// 	uint32 val = cpu->ram[0xB8000 + i];
+
+	// 	printf("    [%.8x] = 0x%.2x\n", 0xB8000 + i, val);
+	// }
 
 	free(cpu->ram);
 
