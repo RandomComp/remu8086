@@ -22,6 +22,8 @@ entry:
 
 	; vmcall
 
+	rdtsc
+
 	mov eax, 0x60
 	mov ebx, 0
 	vmcall

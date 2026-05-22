@@ -17,31 +17,29 @@ EMULATOR_OBJFILES := \
 
 all: emulator_all clean
 
-emulator_all: remu8086 clean
-	@./remu8086 program.bin
+emulator_all: remu80386 clean
+	@./remu80386 program.bin
 
 emulator_to_kernel_path:
-	@echo "Copying remu8086 to kernel path..."
+	@echo "Copying remu80386 to kernel path..."
 
-	@rm -f ~/Projects-on-SSD/kernel/remu8086
+	@rm -f ~/Projects-on-SSD/kernel/remu80386
 
-	@cp remu8086 ~/Projects-on-SSD/kernel/
+	@cp remu80386 ~/Projects-on-SSD/kernel/
 
-	@echo "Copied remu8086 to kernel path"
+	@echo "Copied remu80386 to kernel path"
 
 program:
 	@rm -f $@.bin
 
 	@nasm -f elf32 $@.asm -o $@_asm.o
 
-	@gcc -m32 -O0 -c $@.c -o $@_c.o -ffreestanding -fno-asynchronous-unwind-tables -masm=intel -fno-pic -fno-pie
+	@gcc -m32 -c $@.c -o $@_c.o -ffreestanding -fno-asynchronous-unwind-tables -masm=intel -fno-pic -fno-pie
 
 	@ld -m elf_i386 --oformat=binary -Ttext 0x100000 -e entry $@_asm.o $@_c.o -o $@.bin
 
-remu8086: $(EMULATOR_OBJFILES)
-	@$(CC) $^ -o $@ -lSDL2 -lSDL2_image -pthread
-
-#	@$(CC) $^ -o $@.out -pthread
+remu80386: $(EMULATOR_OBJFILES)
+	@$(CC) $^ -o $@
 
 obj/%.o: %.c
 	@mkdir -p $(dir $@)
@@ -51,5 +49,5 @@ obj/%.o: %.c
 clean:
 	@rm -f $(EMULATOR_OBJFILES)
 
-clean_all: clean_emulator clean_os clean
-	@rm -f remu8086
+clean_all: clean
+	@rm -f remu80386 program.bin

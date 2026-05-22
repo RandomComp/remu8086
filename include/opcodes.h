@@ -5,6 +5,7 @@
 
 typedef enum instruction_e {
 	INSTRUCTION_NOP 				= 0x90,
+	INSTRUCTION_MOV_BYTE_MODRN 		= 0x88,
 	INSTRUCTION_MOV_MODRN 			= 0x89,
 	INSTRUCTION_TEST_R8_R8			= 0x84,
 	INSTRUCTION_ADD_R_BYTE_N 		= 0x83,
@@ -21,8 +22,6 @@ typedef enum instruction_e {
 	INSTRUCTION_SUB_R_R				= 0x29,
 	INSTRUCTION_CMP_R_N				= 0x83,
 	INSTRUCTION_CMP_R_R				= 0x39,
-	INSTRUCTION_MOVZSX_R_MEM_R		= 0x0F,
-	INSTRUCTION_RDTSC				= 0x0F,
 	INSTRUCTION_SUB_R_N				= 0x2D,
 	// начинается с 0xf7e0, заканчивается 0xf7e7, TODO: Добавить в список
 	INSTRUCTION_MUL_R				= 0xF7,
@@ -38,13 +37,13 @@ typedef enum instruction_e {
 	INSTRUCTION_OP_AOCBAXC_R_N		= 0x81, // add/or/adc/sbb/and/sub/xor/cmp // TODO: Добавить в список
 	INSTRUCTION_OP_AOCBAXC_BYTE_R_N	= 0x80, // add/or/adc/sbb/and/sub/xor/cmp
 	INSTRUCTION_OR_EAX_N			= 0x0D,
-	INSTRUCTION_VMCALL 				= 0x0F, // emulator call
 	INSTRUCTION_SHORT_JMP			= 0xEB,
 	INSTRUCTION_SHORT_JC			= 0x72,
 	INSTRUCTION_SHORT_JNC			= 0x73,
 	INSTRUCTION_SHORT_JZ			= 0x74,
 	INSTRUCTION_SHORT_JNZ			= 0x75,
 	INSTRUCTION_PUSH_N				= 0x68,
+	INSTRUCTION_PUSH_BYTE_N			= 0x6A,
 	INSTRUCTION_PUSH_R				= 0x50,
 	INSTRUCTION_POP_R				= 0x58,
 	INSTRUCTION_CALL_N				= 0xE8,
@@ -52,6 +51,13 @@ typedef enum instruction_e {
 	INSTRUCTION_RET					= 0xC3,
 	INSTRUCTION_LEAVE				= 0xC9,
 } instruction_e;
+
+typedef enum two_byte_instruction_e {
+	TWO_BYTE_INSTRUCTION_MOVZX_R_RMM		= 0xB6,
+	TWO_BYTE_INSTRUCTION_MOVSX_R_RMM		= 0xB7,
+	TWO_BYTE_INSTRUCTION_RDTSC				= 0x31,
+	TWO_BYTE_INSTRUCTION_VMCALL 			= 0x01, // emulator call
+} two_byte_instruction_e;
 
 typedef enum instruction_mask_e {
 	INSTRUCTION_MASK_EQUAL,
@@ -106,14 +112,14 @@ typedef struct PACKED modrm_t {
 	
 	if mod != 11 && reg_or_mem == 100 then next byte is SIB
 	
-	if mod == 00 && reg_or_mem == 101 then next 4 bytes is pure address
+	if mod == 00 && reg_or_mem == 101 then next 4 bytes is immediate address
 	*/
 	byte mod:2;
 } modrm_t;
 
 typedef struct PACKED sib_t {
 	/*
-	if base_reg = 101 and mod = 00 in modrm byte then after sib byte 4 bytes of pure address
+	if base_reg = 101 and mod = 00 in modrm byte then after sib byte 4 or 2 bytes (depending of cpu mode) of pure address
 	*/
 	register_e base_reg:3;
 

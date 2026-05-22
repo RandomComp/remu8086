@@ -3,7 +3,7 @@
 *.so
 *.log
 *.out
-remu8086
+remu80386
 *.o
 *.bin
 repo_pushing_token
