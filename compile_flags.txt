@@ -1,4 +1,5 @@
 -Wall
+-Wextra
 -Wpadded
 -Werror=return-type
 -Wno-unused-parameter
@@ -12,3 +13,4 @@
 -Werror=float-conversion
 -Werror=undef
 -Iinclude
+-Ilinenoise

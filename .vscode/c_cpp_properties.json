@@ -1,8 +1,8 @@
 {
 	"configurations": [
 		{
-			"name": "remu8086",
-			"includePath": ["emulator/include/**/**"],
+			"name": "remu80386",
+			"includePath": ["include/**/**", "linenoise/*"],
 			"compilerPath": "/usr/bin/gcc",
 			"cStandard": "c11",
 			"intelliSenseMode": "linux-gcc-x64"

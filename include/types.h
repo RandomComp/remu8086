@@ -1,7 +1,5 @@
-#ifndef REMU_8086_TYPES_H
-#define REMU_8086_TYPES_H
-
-typedef unsigned char byte;
+#ifndef REMU_80386_TYPES_H
+#define REMU_80386_TYPES_H
 
 typedef _Bool bool;
 #define true 1
@@ -10,6 +8,7 @@ typedef _Bool bool;
 
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
 #define MAX(a, b) ((a) > (b) ? (a) : (b))
+#define ABS(x) ((x) < 0 ? -(x) : (x))
 
 #define PACKED __attribute__((packed))
 
@@ -74,19 +73,19 @@ typedef _Bool bool;
 #define PLATFORM_COMPILER_VERSION_MAJOR (_MSC_VER % 100)
 #endif
 
-#if !defined(__STDC_HOSTED__) || __STDC_HOSTED__ == 0
-	#define FREE_STANDING_MODE
-#endif
+#define REMU80386_INFO ("REMU80386, compiled using " PLATFORM_COMPILER_NAME " %i.%.2i for " PLATFORM_NAME " " PLATFORM_ARCH)
 
-// #define BITS_16
-
-#ifdef FREE_STANDING_MODE
-#define BITS_32
-#else
+#if defined(PLATFORM_X86_64) || defined(PLATFORM_AARCH_64)
 #define BITS_64
+#elif defined(PLATFORM_X86_32) || defined(PLATFORM_ARM_32) || defined(PLATFORM_RISC_V)
+#define BITS_32
 #endif
 
-// BITS 16 is unsupported now.
+#ifdef IS_UNIX
+#define SEPERATOR "│"
+#else
+#define SEPERATOR "|"
+#endif
 
 typedef unsigned char uint8;
 typedef unsigned short uint16;
@@ -94,7 +93,6 @@ typedef unsigned short uint16;
 typedef signed char int8;
 typedef signed short int16;
 
-// Unsupported for 16 BITS, use uint with dynamical depth for this.
 #if defined(BITS_32) || defined(BITS_64)
 	typedef unsigned int uint32;
 	typedef unsigned long long uint64;
@@ -103,31 +101,12 @@ typedef signed short int16;
 	typedef signed long long int64;
 #endif
 
-#include <sys/types.h>
+#include <stdlib.h>
 
-// typedef size_t _size_t;
-
-#if defined(BITS_16)
-
-typedef uint16 _size_t;
-typedef int16 _ssize_t;
-
-#elif defined(BITS_32)
-
-typedef uint32 _size_t;
-typedef int32 _ssize_t;
-
-#elif defined(BITS_64)
-
-typedef uint64 _size_t;
-typedef int64 _ssize_t;
-
-#endif
-
-typedef _size_t word;
+typedef size_t word;
 
 typedef uint8 byte;
 
-typedef _ssize_t _time_t;
+typedef ssize_t _time_t;
 
 #endif

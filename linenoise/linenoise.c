@@ -116,7 +116,7 @@
 #include <sys/ioctl.h>
 #include <unistd.h>
 #include <stdint.h>
-#include "third/linenoise.h"
+#include "linenoise.h"
 
 #define LINENOISE_DEFAULT_HISTORY_MAX_LEN 100
 #define LINENOISE_MAX_LINE (1024*1024)      // That will get dynamically allocated

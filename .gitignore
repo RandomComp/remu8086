@@ -4,6 +4,11 @@
 *.log
 *.out
 remu80386
+remu80386_win_x86.exe
+remu80386_linux_x86
+remu80386_android_aarch64
+remu80386_linux_aarch64
+*.exe
 *.o
 *.bin
 repo_pushing_token

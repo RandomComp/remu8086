@@ -1,5 +1,5 @@
-#ifndef REMU_8086_OPCODES_H
-#define REMU_8086_OPCODES_H
+#ifndef REMU_80386_OPCODES_H
+#define REMU_80386_OPCODES_H
 
 #include <stddef.h>
 
@@ -14,9 +14,9 @@ typedef enum instruction_e {
 	INSTRUCTION_MOV_MEM_R_N 		= 0xC7,
 	INSTRUCTION_MOV_R_MEM_R 		= 0x8B,
 	INSTRUCTION_MOV_R_MEM_N			= 0x8B,
+	INSTRUCTION_LEA_R_MEM_MODRN		= 0x8D,
 	INSTRUCTION_MOV_MEM_N_EAX 		= 0xA3,
 	INSTRUCTION_MOV_EAX_MEM_N		= 0xA1,
-	INSTRUCTION_LEA_R_MEM_R_OFFSET	= 0x8D,
 	INSTRUCTION_ADD_R_R				= 0x01,
 	INSTRUCTION_ADD_R_N				= 0x05, // TODO: Добавить в список
 	INSTRUCTION_SUB_R_R				= 0x29,
@@ -31,17 +31,29 @@ typedef enum instruction_e {
 	INSTRUCTION_DIV_R 				= 0xF7, // TODO: Добавить в список
 	// начинается с 0xf7f8, заканчивается 0xf7ff, TODO: Добавить в список
 	INSTRUCTION_IDIV_R 				= 0xF7, // TODO: Добавить в список
-	INSTRUCTION_SHIFT_MEM_R_N		= 0xc0,
-	INSTRUCTION_SHIFT_R_N			= 0xc1,
-	INSTRUCTION_OP_AOCBAXC_MEM_R_N	= 0x81, // add/or/adc/sbb/and/sub/xor/cmp // TODO: Добавить в список
-	INSTRUCTION_OP_AOCBAXC_R_N		= 0x81, // add/or/adc/sbb/and/sub/xor/cmp // TODO: Добавить в список
-	INSTRUCTION_OP_AOCBAXC_BYTE_R_N	= 0x80, // add/or/adc/sbb/and/sub/xor/cmp
+	INSTRUCTION_SHIFT_MEM_R_N		= 0xc0, // ROL, ROR, RCL, RCR, SHL, SHR, SAL, SAR
+	INSTRUCTION_SHIFT_R_N			= 0xc1, // ROL, ROR, RCL, RCR, SHL, SHR, SAL, SAR
+	GROUP_OP_AOCBAXC_MEM_R_N		= 0x81, // add/or/adc/sbb/and/sub/xor/cmp // TODO: Добавить в список
+	GROUP_OP_AOCBAXC_R_N			= 0x81, // add/or/adc/sbb/and/sub/xor/cmp // TODO: Добавить в список
+	GROUP_AOCBAXC_BYTE_R_N			= 0x80, // add/or/adc/sbb/and/sub/xor/cmp
 	INSTRUCTION_OR_EAX_N			= 0x0D,
 	INSTRUCTION_SHORT_JMP			= 0xEB,
-	INSTRUCTION_SHORT_JC			= 0x72,
-	INSTRUCTION_SHORT_JNC			= 0x73,
-	INSTRUCTION_SHORT_JZ			= 0x74,
-	INSTRUCTION_SHORT_JNZ			= 0x75,
+	INSTURCTION_SHORT_JO			= 0x70,
+	INSTURCTION_SHORT_JNO			= 0x71,
+	INSTURCTION_SHORT_JC			= 0x72,
+	INSTURCTION_SHORT_JNC			= 0x73,
+	INSTURCTION_SHORT_JZ			= 0x74,
+	INSTURCTION_SHORT_JNZ			= 0x75,
+	INSTURCTION_SHORT_JCZ			= 0x76,
+	INSTURCTION_SHORT_JNCZ			= 0x77,
+	INSTURCTION_SHORT_JS			= 0x78,
+	INSTURCTION_SHORT_JNS			= 0x79,
+	INSTURCTION_SHORT_JP			= 0x7A,
+	INSTURCTION_SHORT_JNP			= 0x7B,
+	INSTURCTION_SHORT_JL			= 0x7C,
+	INSTURCTION_SHORT_JGE			= 0x7D,
+	INSTURCTION_SHORT_JLE			= 0x7E,
+	INSTURCTION_SHORT_JG			= 0x7F,
 	INSTRUCTION_PUSH_N				= 0x68,
 	INSTRUCTION_PUSH_BYTE_N			= 0x6A,
 	INSTRUCTION_PUSH_R				= 0x50,
@@ -50,6 +62,9 @@ typedef enum instruction_e {
 	INSTRUCTION_CBW					= 0x98,
 	INSTRUCTION_RET					= 0xC3,
 	INSTRUCTION_LEAVE				= 0xC9,
+	INSTRUCTION_INT3				= 0xCC, // Break point
+	INSTRUCTION_CLI					= 0xFA, // Break point
+	INSTRUCTION_STI					= 0xFB, // Break point
 } instruction_e;
 
 typedef enum two_byte_instruction_e {
@@ -102,7 +117,7 @@ typedef enum register_e {
 
 typedef struct PACKED modrm_t {
 	byte reg_or_mem:3;
-	register_e reg:3; // if instruction have one operand, then is a opcode continuation
+	byte reg:3; // if is group, then is a opcode continuation
 
 	/*
 	00 -- mem (reg is address), without offset
@@ -121,12 +136,12 @@ typedef struct PACKED sib_t {
 	/*
 	if base_reg = 101 and mod = 00 in modrm byte then after sib byte 4 or 2 bytes (depending of cpu mode) of pure address
 	*/
-	register_e base_reg:3;
+	byte base_reg:3;
 
 	/*
 	if index_reg = 100 then only base in sib
 	*/
-	register_e index_reg:3;
+	byte index_reg:3;
 
 	/*
 	(1 << scale) is multiply factor
