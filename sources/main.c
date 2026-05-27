@@ -10,13 +10,13 @@
 
 #include "types.h"
 
-#include "cpu.h"
+#include "cpu/x86/cpu_x86.h"
 #include "emulator.h"
 
 #include "debugger.h"
 
-void print_pretty_dis(uint64 eip, ssize_t real_bytes, ssize_t bytes_cnt, const char* disassembled, cpu_t* cpu) {
-	printf("[0x%.8llx]", eip);
+void print_pretty_dis(uint64 pc, ssize_t real_bytes, ssize_t bytes_cnt, const char* disassembled, cpu_t* cpu) {
+	printf("[0x%.8llx]", pc);
 
 	for (size_t i = 0; i < 7; i++) {
 		printf(" ");
@@ -29,7 +29,7 @@ void print_pretty_dis(uint64 eip, ssize_t real_bytes, ssize_t bytes_cnt, const c
 	else printf("  ");
 	
 	for (ssize_t i = 0; i < MAX(0, real_bytes); i++) {
-		printf("%.2x", cpu->ram[eip + i]);
+		printf("%.2x", cpu->ram[pc + i]);
 	}
 
 	if ((real_bytes * 2) < 15) {
@@ -54,7 +54,7 @@ extern debugger_sym_map_t* root;
 int execute_inst(const char* exec_name, cpu_t* cpu, bool quite, bool force, bool only_disassembling, ssize_t _program_end, bool* show_remaining_opcodes_if_invalid) {
 	ssize_t real_bytes = 0;
 
-	uint32 st_eip = cpu->eip;
+	uint32 st_pc = cpu->pc;
 
 	cpu_mode_e src_reg_mode 	= cpu->cur_reg_mode;
 	cpu_mode_e src_address_mode = cpu->cur_address_mode;
@@ -67,9 +67,9 @@ int execute_inst(const char* exec_name, cpu_t* cpu, bool quite, bool force, bool
 		program_end = 256;
 	}
 
-	if (cpu->eip >= cpu->ram_size) {
+	if (cpu->pc >= cpu->ram_size) {
 		printf("%s:\n\r", exec_name);
-		printf("    While trying to execute instruction on address 0x%.8x an error occured:\n\r", cpu->eip);
+		printf("    While trying to execute instruction on address 0x%.8x an error occured:\n\r", cpu->pc);
 
 		printf("        %s\n\r", get_cpu_err_msg(INSTRUCTION_ERR_PAGE_FAULT));
 
@@ -78,15 +78,15 @@ int execute_inst(const char* exec_name, cpu_t* cpu, bool quite, bool force, bool
 
 	ssize_t bytes_cnt = 0;
 
-	real_bytes = remu_decode_instruction(&instruction, cpu, cpu->ram + cpu->eip, program_end - cpu->eip, &bytes_cnt);
+	real_bytes = remu_decode_instruction(&instruction, cpu, cpu->ram + cpu->pc, program_end - cpu->pc, &bytes_cnt);
 
 	if (real_bytes < 0) {
 		if (!quite) {
 			if (show_remaining_opcodes_if_invalid) {
 				printf("Remaining opcodes: ");
 
-				for (ssize_t i = 0; i <= MIN(80, MAX(0, program_end - (ssize_t)st_eip)); i++) {
-					printf("%.2x ", cpu->ram[st_eip + i]);
+				for (ssize_t i = 0; i <= MIN(80, MAX(0, program_end - (ssize_t)st_pc)); i++) {
+					printf("%.2x ", cpu->ram[st_pc + i]);
 				}
 
 				printf("\n");
@@ -102,7 +102,7 @@ int execute_inst(const char* exec_name, cpu_t* cpu, bool quite, bool force, bool
 			}
 
 			if (force) {
-				cpu->eip += 1;
+				cpu->pc += 1;
 
 				return 0;
 			}
@@ -122,7 +122,7 @@ int execute_inst(const char* exec_name, cpu_t* cpu, bool quite, bool force, bool
 			}
 
 			if (force) {
-				cpu->eip += 1;
+				cpu->pc += 1;
 
 				return 0;
 			}
@@ -133,10 +133,10 @@ int execute_inst(const char* exec_name, cpu_t* cpu, bool quite, bool force, bool
 		}
 	}
 
-	if (root && address_in_map(root, st_eip)) {
-		debugger_sym_map_t* symbol = get_symbol_by_address(root, st_eip);
+	if (root && address_in_map(root, st_pc)) {
+		debugger_sym_map_t* symbol = get_symbol_by_address(root, st_pc);
 
-		char* sym_buf = map_str_symbol(symbol, st_eip, true);
+		char* sym_buf = map_str_symbol(symbol, st_pc, true);
 
 		size_t buf_len = snprintf(nullptr, 0, "%s:", sym_buf) + 1;
 
@@ -146,25 +146,25 @@ int execute_inst(const char* exec_name, cpu_t* cpu, bool quite, bool force, bool
 
 		free(sym_buf);
 
-		print_pretty_dis(st_eip, 0, 0, buf, cpu);
+		print_pretty_dis(st_pc, 0, 0, buf, cpu);
 
-		print_pretty_dis(st_eip, 0, 0, "", cpu);
+		print_pretty_dis(st_pc, 0, 0, "", cpu);
 
 		free(buf);
 	}
 
 	ssize_t prefix_bytes = real_bytes - bytes_cnt;
 		
-	const char* disassembled = instruction.disassemble(cpu, cpu->ram + cpu->eip + prefix_bytes, program_end - cpu->eip - prefix_bytes);
+	const char* disassembled = instruction.disassemble(cpu, cpu->ram + cpu->pc + prefix_bytes, program_end - cpu->pc - prefix_bytes);
 
-	print_pretty_dis(st_eip, real_bytes, bytes_cnt, disassembled, cpu);
+	print_pretty_dis(st_pc, real_bytes, bytes_cnt, disassembled, cpu);
 
 	if (!only_disassembling) {
-		int err = instruction.handler(cpu, cpu->ram + cpu->eip, program_end - cpu->eip);
+		int err = instruction.handler(cpu, cpu->ram + cpu->pc, program_end - cpu->pc);
 		
 		if (err < 0) {
 			printf("%s:\n\r", exec_name);
-			printf("    While executing instruction \"%s\" on address 0x%.8x an error occured:\n\r", disassembled, cpu->eip);
+			printf("    While executing instruction \"%s\" on address 0x%.8x an error occured:\n\r", disassembled, cpu->pc);
 
 			printf("        %s\n\r", get_cpu_err_msg(err));
 
@@ -172,7 +172,7 @@ int execute_inst(const char* exec_name, cpu_t* cpu, bool quite, bool force, bool
 		}
 
 		if (err == INSTRUCTION_ERR_EXIT) {
-			cpu->eip += real_bytes;
+			cpu->pc += real_bytes;
 
 			cpu->executed_insts += 1;
 
@@ -183,7 +183,7 @@ int execute_inst(const char* exec_name, cpu_t* cpu, bool quite, bool force, bool
 		}
 
 		if (err == INSTRUCTION_ERR_BREAKPOINT) {
-			cpu->eip += real_bytes;
+			cpu->pc += real_bytes;
 
 			cpu->executed_insts += 1;
 
@@ -196,7 +196,7 @@ int execute_inst(const char* exec_name, cpu_t* cpu, bool quite, bool force, bool
 		}
 	}
 
-	cpu->eip += real_bytes;
+	cpu->pc += real_bytes;
 
 	cpu->executed_insts += 1;
 
@@ -213,23 +213,48 @@ void main_loop(const char* exec_name, size_t program_start, size_t program_size,
 
 	bool show_remaining_opcodes_if_invalid = true;
 
-	while (cpu->eip >= program_start && cpu->eip <= program_end) {
+	while (cpu->pc >= program_start && cpu->pc <= program_end) {
 		int err = execute_inst(exec_name, cpu, quite, force, only_disassembling, program_end, &show_remaining_opcodes_if_invalid);
 
 		if (err != 0) break;
 	}
 }
 
+void show_usage(const char* exec_name) {
+	printf("Usage: %s [flags: -d -i -s -f -q -v] [binary file to execute/debug/disassemble]\n\r\n\r", exec_name);
+
+	printf("    use -d to disassemble (like r2 -b 32 -q -c \"s 0x0; pd\" or objdump -M intel -D)\n\r");
+	printf("    use -i to activate interactive/debug mode (like r2 [file or \"-\"] or gdb)\n\r");
+	printf("    use -s to load symbols file\n\r");
+	printf("    use -f to activate force mode (ignore errors)\n\r");
+	printf("    use -q to activate quiet mode (not showing errors)\n\r");
+	printf("    use -v to view version\n\r");
+}
+
 int main(int argc, char* argv[]) {
 	setlocale(LC_ALL, "");
 
-	bool only_disassembling = false, force = false, quite = false, interactive = false;
+	bool only_disassembling = false, force = false, quite = false, interactive = false, version = false;
+
+	bool need_symbol_file = false; const char* symbol_file = nullptr;
 
 	int last = -1;
 
 	for (int i = 1; i < argc; i++) {
+		if (need_symbol_file) {
+			symbol_file = argv[i];
+
+			need_symbol_file = false;
+
+			continue;
+		}
+
 		if (strcmp(argv[i], "-d") == 0) {
 			only_disassembling = true;
+		}
+
+		else if (strcmp(argv[i], "-i") == 0) {
+			interactive = true;
 		}
 
 		else if (strcmp(argv[i], "-f") == 0) {
@@ -240,8 +265,12 @@ int main(int argc, char* argv[]) {
 			quite = true;
 		}
 
-		else if (strcmp(argv[i], "-i") == 0) {
-			interactive = true;
+		else if (strcmp(argv[i], "-v") == 0) {
+			version = true;
+		}
+
+		else if (strcmp(argv[i], "-s") == 0) {
+			need_symbol_file = true;
 		}
 
 		else {
@@ -249,13 +278,14 @@ int main(int argc, char* argv[]) {
 		}
 	}
 
-	if ((argc - last) < 1 || (argc - last) > 1) {
-		printf("Usage: %s [flags: -d -f -q -i] [binary file to execute/debug/disassemble]\n\r\n\r", argv[0]);
+	if (version) {
+		printf(REMU80386_INFO "\n\r", REMU80386_VER_MAJOR, REMU80386_VER_MINOR, PLATFORM_COMPILER_VERSION_MAJOR, PLATFORM_COMPILER_VERSION_MINOR);
 
-		printf("    use -d to disassemble (like r2 -b 32 -q -c \"s 0x0; pd\")\n\r");
-		printf("    use -i to activate interactive/debug mode (like r2 [file or \"-\"] or gdb)\n\r");
-		printf("    use -f to activate force mode (ignore errors)\n\r");
-		printf("    use -q to activate quiet mode (not showing errors)\n\r");
+		return 0;
+	}
+
+	if ((argc - last) < 1 || (argc - last) > 1) {
+		show_usage(argv[0]);
 
 		return 1;
 	}
@@ -321,7 +351,37 @@ int main(int argc, char* argv[]) {
 		fclose(program_file);
 	}
 
-	cpu->eip = program_start;
+	cpu->pc = program_start;
+
+	printf("sizeof(cpu_t) = %zu; sizeof(cpu_x86_t) = %zu\n\r", sizeof(cpu_t), sizeof(cpu_x86_t));
+
+	// Loading symbol file if need
+
+	if (symbol_file) {
+		if (!root) {
+			root = map_realloc_syms_ptr(root, "root", DEBUGGER_SYMS_ALLOC_STEP);
+		}
+
+		if (name_in_map(root, symbol_file)) {
+			printf("%s: file \"%s\" already loaded\n\r", argv[0], symbol_file);
+
+			return 1;
+		}
+
+		debugger_sym_map_t* map = load_map_from_file(argv[0], symbol_file);
+
+		if (!map) {
+			return 1;
+		}
+
+		root->syms[root->syms_cnt] = map;
+
+		root->syms_cnt++;
+
+		if (root->syms_cnt >= root->syms_size) {
+			root = map_realloc_syms_ptr(root, root->name, DEBUGGER_SYMS_ALLOC_STEP);
+		}
+	}
 	
 	// const byte data[] = {0xe8, 0xfb, 0xff, 0xff, 0xff};
 

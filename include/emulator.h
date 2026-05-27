@@ -3,7 +3,7 @@
 
 #include "types.h"
 
-#include "cpu_fwd.h"
+#include "cpu/cpu_fwd.h"
 
 // typedef enum remu_errs_e {
 	

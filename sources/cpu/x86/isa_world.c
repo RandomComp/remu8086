@@ -1,6 +1,6 @@
 #include "types.h"
 
-#include "cpu.h"
+#include "cpu/x86/cpu_x86.h"
 
 #include <stdio.h>
 
@@ -32,7 +32,7 @@ ssize_t is_vmcall(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
 }
 
 int vmcall(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
-	if (cpu->eax == 0x60) {
+	if (cpu->accum == 0x60) {
 		cpu->clock += 1;
 
 		return INSTRUCTION_ERR_EXIT;
@@ -60,8 +60,8 @@ ssize_t is_cli(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
 }
 
 int cli(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
-	cpu->intf = false;
-
+	write_flag(cpu, CPU_FLAG_IF, false);
+	
 	return 0;
 }
 
@@ -78,7 +78,7 @@ ssize_t is_sti(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
 }
 
 int sti(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
-	cpu->intf = true;
+	write_flag(cpu, CPU_FLAG_IF, true);
 	
 	return 0;
 }

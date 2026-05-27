@@ -1,6 +1,6 @@
 #include "types.h"
 
-#include "cpu.h"
+#include "cpu/x86/cpu_x86.h"
 #include "utils.h"
 
 #include <stdio.h>
@@ -22,13 +22,13 @@ int cmp_r_r(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
 	uint32 value1 = cpu->registers[reg1];
 	uint32 value2 = cpu->registers[reg2];
 
-	cpu->cf = value1 < value2;
+	write_flag(cpu, CPU_FLAG_CF, value1 < value2);
 
 	value1 -= value2;
 
-	cpu->zf = value1 == 0;
+	write_flag(cpu, CPU_FLAG_ZF, value1 == 0);
 
-	cpu->sf = (value1 & 0x80000000) != 0;
+	write_flag(cpu, CPU_FLAG_SF, (value1 & 0x80000000) != 0);
 
 	// if ((cpu->registers[reg] & 1) == 0) { // parity
 	// 	pf = true;
@@ -65,8 +65,8 @@ int test_r8_r8(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
 
 	reg_value &= cpu->registers[reg2];
 
-	cpu->zf = reg_value == 0;
-	cpu->sf = (reg_value & 0x80) != 0;
+	write_flag(cpu, CPU_FLAG_ZF, reg_value == 0);
+	write_flag(cpu, CPU_FLAG_SF, (reg_value & 0x80) != 0);
 
 	return 0;
 }
@@ -101,11 +101,11 @@ int sub_r_n(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
 
 	cpu->registers[reg] -= value;
 
-	cpu->cf = cpu->registers[reg] >= (uint32)value;
+	write_flag(cpu, CPU_FLAG_CF, cpu->registers[reg] >= (uint32)value);
 
-	cpu->zf = cpu->registers[reg] == 0;
+	write_flag(cpu, CPU_FLAG_ZF, cpu->registers[reg] == 0);
 
-	cpu->of = (cpu->registers[reg] & 0x80000000) != 0;
+	write_flag(cpu, CPU_FLAG_OF, (cpu->registers[reg] & 0x80000000) != 0);
 
 	// if ((cpu->registers[reg1] & 1) == 0) { // parity
 	// 	pf = true;
@@ -158,24 +158,24 @@ int shift(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
 			cpu->registers[mod.reg_or_mem] = 
 				(cpu->registers[mod.reg_or_mem] << (offset + 1)) | 
 				((cpu->registers[mod.reg_or_mem] >> (33 - offset)) << 1) |
-				cpu->cf;
+				read_flag(cpu, CPU_FLAG_CF);
 		}
 
 		else if (op == 3) { // rcr, not fully supported
 			cpu->registers[mod.reg_or_mem] = 
 				(cpu->registers[mod.reg_or_mem] >> (offset - 1)) | 
 				((cpu->registers[mod.reg_or_mem] << (33 - offset)) << 1) |
-				cpu->cf;
+				read_flag(cpu, CPU_FLAG_CF);
 		}
 
 		else if (op == 4) { // shl
-			cpu->cf = cpu->registers[mod.reg_or_mem] & (1 << offset);
+			write_flag(cpu, CPU_FLAG_CF, cpu->registers[mod.reg_or_mem] & (1 << (32 - MIN(32, offset))));
 
 			cpu->registers[mod.reg_or_mem] <<= offset;
 		}
 		
 		else if (op == 5) { // shr
-			cpu->cf = cpu->registers[mod.reg_or_mem] & (1 << (32 - MIN(32, offset)));
+			write_flag(cpu, CPU_FLAG_CF, cpu->registers[mod.reg_or_mem] & (1 << MIN(32, offset)));
 
 			cpu->registers[mod.reg_or_mem] >>= offset;
 		}
@@ -254,7 +254,7 @@ int or_eax_n(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
 					((uint32)bytes[3] << 16)| 
 					((uint32)bytes[4] << 24);
 
-	cpu->eax |= value;
+	cpu->accum |= value;
 
 	cpu->clock += 1;
 
@@ -364,13 +364,13 @@ int aocbaxc_group_add_modrn_i8(cpu_t* cpu, const byte* bytes, size_t max_bytes) 
 	int offset = convert_byte_to_int(bytes[1]);
 
 	if (mod.mod == 0b11) {
-		cpu->cf = (int)cpu->registers[mod.reg_or_mem] < offset;
+		write_flag(cpu, CPU_FLAG_CF, (int)cpu->registers[mod.reg_or_mem] < offset);
 		
 		cpu->registers[mod.reg_or_mem] += offset;
 
-		cpu->zf = cpu->registers[mod.reg_or_mem] == 0;
+		write_flag(cpu, CPU_FLAG_ZF, cpu->registers[mod.reg_or_mem] == 0);
 
-		cpu->of = (cpu->registers[mod.reg_or_mem] & 0x80000000) != 0;
+		write_flag(cpu, CPU_FLAG_OF, (cpu->registers[mod.reg_or_mem] & 0x80000000) != 0);
 
 		cpu->clock += 1;
 	}
@@ -412,11 +412,11 @@ int aocbaxc_group_sub_modrn_i8(cpu_t* cpu, const byte* bytes, size_t max_bytes) 
 
 		uint32 second_value = cpu->registers[mod.reg_or_mem];
 
-		cpu->zf = second_value == 0;
+		write_flag(cpu, CPU_FLAG_ZF, second_value == 0);
 
-		cpu->cf = second_value > orig_second_value;
+		write_flag(cpu, CPU_FLAG_CF, second_value > orig_second_value);
 
-		cpu->of = (orig_second_value & 0x80000000) != (second_value & 0x80000000);
+		write_flag(cpu, CPU_FLAG_OF, (orig_second_value & 0x80000000) != (second_value & 0x80000000));
 
 		cpu->clock += 1;
 	}
@@ -466,11 +466,11 @@ int aocbaxc_group_cmp_modrn_i8(cpu_t* cpu, const byte* bytes, size_t max_bytes) 
 
 		second_value -= value;
 
-		cpu->zf = second_value == 0;
+		write_flag(cpu, CPU_FLAG_ZF, second_value == 0);
 
-		cpu->cf = second_value > orig_second_value;
+		write_flag(cpu, CPU_FLAG_CF, second_value > orig_second_value);
 
-		cpu->of = (orig_second_value & 0x80000000) != (second_value & 0x80000000);
+		write_flag(cpu, CPU_FLAG_OF, (orig_second_value & 0x80000000) != (second_value & 0x80000000));
 
 		cpu->clock += 1;
 	}
@@ -480,7 +480,7 @@ int aocbaxc_group_cmp_modrn_i8(cpu_t* cpu, const byte* bytes, size_t max_bytes) 
 
 		uint32 second_value = 0;
 		
-		err = read_dword(cpu, cpu->registers[mod.reg_or_mem] + value, &second_value);
+		err = read_dword((cpu_t*)cpu, cpu->registers[mod.reg_or_mem] + value, &second_value);
 
 		if (err < 0) return err;
 
@@ -488,11 +488,11 @@ int aocbaxc_group_cmp_modrn_i8(cpu_t* cpu, const byte* bytes, size_t max_bytes) 
 
 		second_value -= offset;
 
-		cpu->zf = second_value == 0;
+		write_flag(cpu, CPU_FLAG_ZF, second_value == 0);
 
-		cpu->cf = second_value > orig_second_value;
+		write_flag(cpu, CPU_FLAG_CF, second_value > orig_second_value);
 
-		cpu->of = (orig_second_value & 0x80000000) != (second_value & 0x80000000);
+		write_flag(cpu, CPU_FLAG_OF, (orig_second_value & 0x80000000) != (second_value & 0x80000000));
 
 		snprintf(disassemble_buf, 32, "cmp dword [%s%+i], 0x%x", registers_name[mod.reg_or_mem], value, offset);
 	}
@@ -536,13 +536,13 @@ int add_r_r(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
 	
 	uint32 reg2_value = cpu->registers[mod.reg];
 
-	cpu->cf = cpu->registers[mod.reg_or_mem] < reg2_value;
+	write_flag(cpu, CPU_FLAG_CF, cpu->registers[mod.reg_or_mem] < reg2_value);
 
 	cpu->registers[mod.reg_or_mem] += reg2_value;
 	
-	cpu->zf = cpu->registers[mod.reg_or_mem] == 0;
+	write_flag(cpu, CPU_FLAG_ZF, cpu->registers[mod.reg_or_mem] == 0);
 
-	cpu->of = (cpu->registers[mod.reg_or_mem] & 0x80000000) != 0;
+	write_flag(cpu, CPU_FLAG_OF, (cpu->registers[mod.reg_or_mem] & 0x80000000) != 0);
 
 	// if ((cpu->registers[reg1] & 1) == 0) { // parity
 	// 	pf = true;
@@ -576,13 +576,13 @@ int sub_r_r(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
 	
 	uint32 reg2_value = cpu->registers[reg2];
 
-	cpu->cf = cpu->registers[reg1] < reg2_value;
+	write_flag(cpu, CPU_FLAG_CF, cpu->registers[reg1] < reg2_value);
 
 	cpu->registers[reg1] -= reg2_value;
 	
-	cpu->zf = cpu->registers[reg1] == 0;
+	write_flag(cpu, CPU_FLAG_ZF, cpu->registers[reg1] == 0);
 
-	cpu->sf = (cpu->registers[reg1] & 0x80000000) != 0;
+	write_flag(cpu, CPU_FLAG_SF, (cpu->registers[reg1] & 0x80000000) != 0);
 
 	// if ((cpu->registers[reg1] & 1) == 0) { // parity
 	// 	pf = true;

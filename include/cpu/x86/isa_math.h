@@ -3,7 +3,7 @@
 
 #include "types.h"
 
-#include "cpu_fwd.h"
+#include "cpu/cpu_fwd.h"
 
 ssize_t is_cmp_r_r(cpu_t* cpu, const byte* bytes, size_t max_bytes);
 int cmp_r_r(cpu_t* cpu, const byte* bytes, size_t max_bytes);

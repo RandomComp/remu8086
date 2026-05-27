@@ -1,8 +1,6 @@
 #ifndef REMU_80386_OPCODES_H
 #define REMU_80386_OPCODES_H
 
-#include <stddef.h>
-
 typedef enum instruction_e {
 	INSTRUCTION_NOP 				= 0x90,
 	INSTRUCTION_MOV_BYTE_MODRN 		= 0x88,
@@ -74,76 +72,6 @@ typedef enum two_byte_instruction_e {
 	TWO_BYTE_INSTRUCTION_RDTSC				= 0x31,
 	TWO_BYTE_INSTRUCTION_VMCALL 			= 0x01, // emulator call
 } two_byte_instruction_e;
-
-typedef enum register_e {
-	REGISTER_EAX,
-	REGISTER_ECX,
-	REGISTER_EDX,
-	REGISTER_EBX,
-	REGISTER_ESP,
-	REGISTER_EBP,
-	REGISTER_ESI,
-	REGISTER_EDI,
-	REGISTER_EIP,
-	REGISTER_CS,
-	REGISTER_DS,
-	REGISTER_SS,
-	REGISTER_ES,
-	REGISTER_EFLAGS,
-	REGISTER_AX,
-	REGISTER_CX,
-	REGISTER_DX,
-	REGISTER_BX,
-	REGISTER_SP,
-	REGISTER_BP,
-	REGISTER_SI,
-	REGISTER_DI,
-	REGISTER_IP,
-	REGISTER_AL,
-	REGISTER_CL,
-	REGISTER_DL,
-	REGISTER_BL,
-	REGISTER_AH,
-	REGISTER_CH,
-	REGISTER_DH,
-	REGISTER_BH,
-} register_e;
-
-#include "types.h"
-
-typedef struct PACKED modrm_t {
-	byte reg_or_mem:3;
-	byte reg:3; // if is group, then is a opcode continuation
-
-	/*
-	00 -- mem (reg is address), without offset
-	01 -- mem (reg is address), 1 byte offset
-	10 -- mem (reg is address), 4 byte offset
-	11 -- reg_or_mem and reg -- registers
-	
-	if mod != 11 && reg_or_mem == 100 then next byte is SIB
-	
-	if mod == 00 && reg_or_mem == 101 then next 4 bytes is immediate address
-	*/
-	byte mod:2;
-} modrm_t;
-
-typedef struct PACKED sib_t {
-	/*
-	if base_reg = 101 and mod = 00 in modrm byte then after sib byte 4 or 2 bytes (depending of cpu mode) of pure address
-	*/
-	byte base_reg:3;
-
-	/*
-	if index_reg = 100 then only base in sib
-	*/
-	byte index_reg:3;
-
-	/*
-	(1 << scale) is multiply factor
-	*/
-	byte scale:2;
-} sib_t;
 
 #define REGISTERS_CNT (REGISTER_EFLAGS - REGISTER_EAX + 1)
 

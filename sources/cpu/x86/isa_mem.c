@@ -1,6 +1,6 @@
 #include "types.h"
 
-#include "cpu.h"
+#include "cpu/x86/cpu_x86.h"
 
 #include "utils.h"
 
@@ -557,7 +557,7 @@ int mov_mem_n_eax(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
 		uint16 number = ((uint16)bytes[1] << 0) | 
 						((uint16)bytes[2] << 8);
 
-		return write_word(cpu, number, cpu->eax);
+		return write_word(cpu, number, cpu->accum);
 	}
 	
 	else if (cpu->cur_address_mode == CPU_MODE_32_BITS) {
@@ -566,7 +566,7 @@ int mov_mem_n_eax(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
 						((uint32)bytes[3] << 16)| 
 						((uint32)bytes[4] << 24);
 
-		return write_dword(cpu, number, cpu->eax);
+		return write_dword(cpu, number, cpu->accum);
 	}
 
 	return 0;
@@ -622,7 +622,7 @@ int mov_eax_mem_n(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
 		
 		read_word(cpu, number, &value);
 
-		cpu->ax = value;
+		cpu->accum16 = value;
 	}
 
 	else if (cpu->cur_reg_mode == CPU_MODE_32_BITS) {
@@ -632,7 +632,7 @@ int mov_eax_mem_n(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
 		
 		read_dword(cpu, number, &value);
 
-		cpu->eax = value;
+		cpu->accum = value;
 	}
 
 	return 0;
@@ -921,9 +921,9 @@ ssize_t is_push_r(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
 int push_r(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
 	register_e reg = bytes[0] & 0b00000111;
 
-	cpu->esp -= 4;
+	cpu->stack -= 4;
 
-	return write_dword(cpu, cpu->esp, cpu->registers[reg]);
+	return write_dword(cpu, cpu->stack, cpu->registers[reg]);
 }
 
 const char* push_r_disassemble(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
@@ -948,9 +948,9 @@ int pop_r(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
 
 	cpu->registers[reg] = 0;
 	
-	int err = read_dword(cpu, cpu->esp, &cpu->registers[reg]);
+	int err = read_dword(cpu, cpu->stack, &cpu->registers[reg]);
 
-	if (err >= 0) cpu->esp += 4;
+	if (err >= 0) cpu->stack += 4;
 
 	return err;
 }
@@ -974,9 +974,9 @@ ssize_t is_push_n(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
 int push_n(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
 	uint32 value = *(const uint32*)(const void*)(bytes + 1);
 
-	cpu->esp -= 4;
+	cpu->stack -= 4;
 
-	return write_dword(cpu, cpu->esp, value);
+	return write_dword(cpu, cpu->stack, value);
 }
 
 const char* push_n_disassemble(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
@@ -1000,9 +1000,9 @@ ssize_t is_push_byte_n(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
 int push_byte_n(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
 	byte value = bytes[1];
 
-	cpu->esp -= 4;
+	cpu->stack -= 4;
 
-	return write_dword(cpu, cpu->esp, value);
+	return write_dword(cpu, cpu->stack, value);
 }
 
 const char* push_byte_n_disassemble(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
@@ -1023,26 +1023,26 @@ ssize_t is_cbw(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
 
 int cbw(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
 	if (cpu->cur_reg_mode == CPU_MODE_32_BITS) {
-		bool sign = cpu->ax & 0x8000;
+		bool sign = cpu->accum16 & 0x8000;
 
 		if (sign) {
-			cpu->eax = ~((uint32)(~cpu->ax) + 1) + 1;
+			cpu->accum = ~((uint32)(~cpu->accum16) + 1) + 1;
 		}
 
 		else {
-			cpu->eax = cpu->ax;
+			cpu->accum = cpu->accum16;
 		}
 	}
 
 	else if (cpu->cur_reg_mode == CPU_MODE_16_BITS) {
-		bool sign = cpu->al & 0x80;
+		bool sign = cpu->accum8_l & 0x80;
 
 		if (sign) {
-			cpu->ax = ~((uint16)(~cpu->al) + 1) + 1;
+			cpu->accum16 = ~((uint16)(~cpu->accum8_l) + 1) + 1;
 		}
 
 		else {
-			cpu->ax = cpu->al;
+			cpu->accum16 = cpu->accum8_l;
 		}
 	}
 

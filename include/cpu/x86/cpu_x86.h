@@ -1,35 +1,19 @@
-#ifndef REMU_80386_CPU_H
-#define REMU_80386_CPU_H
+#ifndef REMU_80386_CPU_X86_H
+#define REMU_80386_CPU_X86_H
 
 #include "types.h"
 
 #include "opcodes.h"
 
-#include "cpu_fwd.h"
+#include "cpu/cpu.h"
 
-#include "cpu/isa_math.h"
-#include "cpu/isa_mem.h"
-#include "cpu/isa_world.h"
+#include "cpu/cpu_fwd.h"
 
-#define CALL_STACK_SIZE_STEP 64
+#include "cpu/x86/isa_math.h"
+#include "cpu/x86/isa_mem.h"
+#include "cpu/x86/isa_world.h"
 
-union reg_u {
-	uint32 val;
-
-	struct PACKED {
-		uint16 l;
-		uint16 h;
-	};
-
-	struct PACKED {
-		uint8 ll;
-		uint8 lh;
-		uint8 hl;
-		uint8 hh;
-	};
-};
-
-struct cpu_t {
+struct cpu_x86_t {
 	union PACKED {
 		struct PACKED {
 			union PACKED {
@@ -37,10 +21,14 @@ struct cpu_t {
 
 				struct PACKED {
 					uint16 ax;
+
+					uint16 ALIGN_SHORT0;
 				};
 
 				struct PACKED {
 					byte al, ah;
+
+					uint16 ALIGN_SHORT1;
 				};
 			};
 
@@ -53,6 +41,8 @@ struct cpu_t {
 
 				struct PACKED {
 					byte cl, ch;
+
+					uint16 ALIGN_SHORT2;
 				};
 			};
 
@@ -65,6 +55,8 @@ struct cpu_t {
 
 				struct PACKED {
 					byte dl, dh;
+
+					uint16 ALIGN_SHORT3;
 				};
 			};
 
@@ -77,6 +69,8 @@ struct cpu_t {
 
 				struct PACKED {
 					byte bl, bh;
+
+					uint16 ALIGN_SHORT4;
 				};
 			};
 
@@ -85,6 +79,8 @@ struct cpu_t {
 
 				struct PACKED {
 					uint16 sp;
+
+					uint16 ALIGN_SHORT5;
 				};
 			};
 
@@ -93,13 +89,15 @@ struct cpu_t {
 
 				struct PACKED {
 					uint16 bp;
+
+					uint16 ALIGN_SHORT6;
 				};
 			};
 
 			uint32 esi; 
 			uint32 edi;
 
-			uint32 eip;
+			uint32 pc;
 
 			uint32 cs, ds, ss, es;
 
@@ -149,13 +147,14 @@ struct cpu_t {
 					byte UNUSED reserved4:4;
 				};
 			};
+
+			uint32 UNUSED reserved5;
+			uint32 UNUSED reserved6;
 		};
 
-		union PACKED {
-			uint32 registers[16];
+		uint32 registers[16];
 
-			reg_u ext_regs[16];
-		};
+		reg_u ext_regs[16];
 	};
 
 	byte* ram; size_t ram_size;
@@ -173,29 +172,39 @@ struct cpu_t {
 	cpu_mode_e cur_address_mode;
 };
 
-typedef struct group_t {
-	const instruction_t* insts;
-} group_t;
+typedef struct PACKED modrm_t {
+	byte reg_or_mem:3;
+	byte reg:3; // if is group, then is a opcode continuation
 
-struct instruction_t {
-	ssize_t (*is)(cpu_t* cpu, const byte* bytes, size_t max_bytes);
-	int (*handler)(cpu_t* cpu, const byte* bytes, size_t max_bytes);
-	const char* (*disassemble)(cpu_t* cpu, const byte* bytes, size_t max_bytes);
-
-	const char* mnemonic; const char* operands; const char* description;
+	/*
+	00 -- mem (reg is address), without offset
+	01 -- mem (reg is address), 1 byte offset
+	10 -- mem (reg is address), 4 byte offset
+	11 -- reg_or_mem and reg -- registers
 	
-	group_t group;
-};
+	if mod != 11 && reg_or_mem == 100 then next byte is SIB
+	
+	if mod == 00 && reg_or_mem == 101 then next 4 bytes is immediate address
+	*/
+	byte mod:2;
+} modrm_t;
 
-typedef enum instruction_err_e {
-	INSTRUCTION_ERR_OK 					=  0,
-	INSTRUCTION_ERR_EXIT 				=  1,
-	INSTRUCTION_ERR_UNALIGNED 			=  2,
-	INSTRUCTION_ERR_BREAKPOINT 			=  3,
-	INSTRUCTION_ERR_INVALID 			= -1,
-	INSTRUCTION_ERR_PAGE_FAULT 			= -2,
-	INSTRUCTION_ERR_CALL_STACK_MAX_SIZE = -3,
-} instruction_err_e;
+typedef struct PACKED sib_t {
+	/*
+	if base_reg = 101 and mod = 00 in modrm byte then after sib byte 4 or 2 bytes (depending of cpu mode) of pure address
+	*/
+	byte base_reg:3;
+
+	/*
+	if index_reg = 100 then only base in sib
+	*/
+	byte index_reg:3;
+
+	/*
+	(1 << scale) is multiply factor
+	*/
+	byte scale:2;
+} sib_t;
 
 extern const char* registers_name[32];
 
@@ -301,25 +310,6 @@ ssize_t is_rdtsc(cpu_t* cpu, const byte* bytes, size_t max_bytes);
 int rdtsc(cpu_t* cpu, const byte* bytes, size_t max_bytes);
 const char* rdtsc_disassemble(cpu_t* cpu, const byte* bytes, size_t max_bytes);
 
-/* MMU Memory Management Unit */
-int write_byte(cpu_t* cpu, uint32 addr, byte value);
-int read_byte(cpu_t* cpu, uint32 addr, byte* value);
-
-int write_word(cpu_t* cpu, uint32 addr, uint16 value);
-int read_word(cpu_t* cpu, uint32 addr, uint16* value);
-
-int write_dword(cpu_t* cpu, uint32 addr, uint32 value);
-int read_dword(cpu_t* cpu, uint32 addr, uint32* value);
-
-uint32 read_register(cpu_t* cpu, register_e reg, int* bits);
-
-void cpu_dump_reg(cpu_t* cpu, register_e reg);
-void cpu_dump(cpu_t* cpu);
-
-void stack_dump(cpu_t* cpu);
-
-const char* get_cpu_err_msg(int err);
-
 static const instruction_t aocbaxc_byte_group[8] = {
 	[1] = {.mnemonic = "or", .operands = "byte rmm8, i8", .is = is_aocbaxc_group_or_byte_modrn, .handler = aocbaxc_group_or_byte_modrn, .disassemble = aocbaxc_group_or_byte_modrn_disassemble, .description = "Applies a OR to 8-bit register/memory byte and immediate byte value."}
 };
@@ -330,6 +320,16 @@ static const instruction_t aocbaxc_dword_group[8] = {
 	[5] = {.mnemonic = "sub", .operands = "rmm32, i8", .is = is_aocbaxc_group_sub_modrn_i8, .handler = aocbaxc_group_sub_modrn_i8, .disassemble = aocbaxc_group_sub_modrn_i8_disassemble, 	.description = "Subtracts a 32-bit memory register/byte and the immediate byte value."},
 	[7] = {.mnemonic = "cmp", .operands = "rmm32, i8", .is = is_aocbaxc_group_cmp_modrn_i8, .handler = aocbaxc_group_cmp_modrn_i8, .disassemble = aocbaxc_group_cmp_modrn_i8_disassemble, 	.description = "Compares a 32-bit memory register/byte with the immediate byte value."},
 };
+
+#define MAKE_IT_8_TIMES_DESIGNATED(index, _mnemonic, _operands, _is, _handler, _disassemble, _description) \
+	[index + 0] 	= {.mnemonic = _mnemonic, .operands = _operands, .is = _is, .handler = _handler, .disassemble = _disassemble, .description = _description }, \
+	[index + 1] 	= {.mnemonic = _mnemonic, .operands = _operands, .is = _is, .handler = _handler, .disassemble = _disassemble, .description = _description }, \
+	[index + 2] 	= {.mnemonic = _mnemonic, .operands = _operands, .is = _is, .handler = _handler, .disassemble = _disassemble, .description = _description }, \
+	[index + 3] 	= {.mnemonic = _mnemonic, .operands = _operands, .is = _is, .handler = _handler, .disassemble = _disassemble, .description = _description }, \
+	[index + 4] 	= {.mnemonic = _mnemonic, .operands = _operands, .is = _is, .handler = _handler, .disassemble = _disassemble, .description = _description }, \
+	[index + 5] 	= {.mnemonic = _mnemonic, .operands = _operands, .is = _is, .handler = _handler, .disassemble = _disassemble, .description = _description }, \
+	[index + 6] 	= {.mnemonic = _mnemonic, .operands = _operands, .is = _is, .handler = _handler, .disassemble = _disassemble, .description = _description }, \
+	[index + 7] 	= {.mnemonic = _mnemonic, .operands = _operands, .is = _is, .handler = _handler, .disassemble = _disassemble, .description = _description }
 
 static const instruction_t one_bytes_instructions[0xFF] = {
 	[INSTRUCTION_NOP] 									= {.mnemonic = "nop",								.operands = "", 					 		.is =  	is_nop, 				.handler = nop, 				.disassemble = nop_disassemble, 				.description = "Do nothing." },
@@ -369,9 +369,9 @@ static const instruction_t one_bytes_instructions[0xFF] = {
 	[INSTURCTION_SHORT_JG] 								= {.mnemonic = "jg", 								.operands = "i8", 					 		.is =	is_short_jg, 			.handler = short_jg, 			.disassemble = short_jg_disassemble, 			.description = "" },
 	[INSTRUCTION_PUSH_N] 								= {.mnemonic = "push", 								.operands = "i32", 							.is =	is_push_n,				.handler = push_n,				.disassemble = push_n_disassemble, 				.description = "" },
 	[INSTRUCTION_PUSH_BYTE_N] 							= {.mnemonic = "push", 								.operands = "i8", 							.is = 	is_push_byte_n,			.handler = push_byte_n, 		.disassemble = push_byte_n_disassemble},
-	[INSTRUCTION_PUSH_R ... (INSTRUCTION_PUSH_R + 7)] 	= {.mnemonic = "push", 								.operands = "reg", 					 		.is =  	is_push_r, 				.handler = push_r, 				.disassemble = push_r_disassemble },
-	[INSTRUCTION_POP_R ... (INSTRUCTION_POP_R + 7)] 	= {.mnemonic = "pop", 								.operands = "reg", 					 		.is =  	is_pop_r, 				.handler = pop_r, 				.disassemble = pop_r_disassemble },
-	[INSTRUCTION_MOV_R_N ... (INSTRUCTION_MOV_R_N + 7)] = {.mnemonic = "mov", 								.operands = "reg, i32", 			 		.is =  	is_mov_n_to_r, 			.handler = mov_n_to_r, 			.disassemble = mov_n_to_r_disassemble },
+	MAKE_IT_8_TIMES_DESIGNATED(INSTRUCTION_PUSH_R, "push", "reg", is_push_r, push_r, push_r_disassemble, "Push register value to stack."),
+	MAKE_IT_8_TIMES_DESIGNATED(INSTRUCTION_POP_R, "pop", "reg", is_pop_r, pop_r, pop_r_disassemble, "Pop a value from the stack to register"),
+	MAKE_IT_8_TIMES_DESIGNATED(INSTRUCTION_MOV_R_N, "mov", "reg, i32", is_mov_n_to_r, mov_n_to_r, mov_n_to_r_disassemble, "Move 32 bit number to 32 bit register."),
 	[INSTRUCTION_CALL_N] 								= {.mnemonic = "call", 								.operands = "i32", 					 		.is =  	is_call_n, 				.handler = call_n, 				.disassemble = call_n_disassemble },
 	[INSTRUCTION_CBW] 									= {.mnemonic = "cbw", 								.operands = "", 					 		.is = 	is_cbw, 				.handler = cbw, 				.disassemble = cbw_disassemble },
 	[INSTRUCTION_LEAVE] 								= {.mnemonic = "leave", 							.operands = "", 					 		.is =  	is_leave, 				.handler = leave, 				.disassemble = leave_disassemble },

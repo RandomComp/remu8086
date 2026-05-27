@@ -204,3 +204,13 @@ int convert_byte_to_int(byte val) {
 
 	return (int)val;
 }
+
+const char* get_home_dir(void) {
+	#ifdef IS_UNIX
+	return getenv("HOME");
+	#elif defined(IS_WIN)
+	return getenv("USERPROFILE");
+	#endif
+
+	return nullptr;
+}

@@ -3,7 +3,7 @@
 
 #include "types.h"
 
-#include "cpu_fwd.h"
+#include "cpu/cpu_fwd.h"
 
 #include <stdio.h>
 

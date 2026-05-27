@@ -2,7 +2,7 @@
 
 #include "types.h"
 
-#include "cpu.h"
+#include "cpu/x86/cpu_x86.h"
 
 #include <stdio.h>
 

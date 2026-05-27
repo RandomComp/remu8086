@@ -21,4 +21,8 @@ void parse_bytes(const char* str, byte* _bytes, size_t* _bytes_cnt, const char**
 
 int convert_byte_to_int(byte val);
 
+const char* get_home_dir(void);
+
+char* str_to_bin(uint64 );
+
 #endif

@@ -18,7 +18,7 @@ BASE_CFLAGS := \
 	-Werror=undef -Werror=nonnull -Wparentheses -Werror=sequence-point \
 	-Werror=sizeof-pointer-div -Wsizeof-pointer-memaccess \
 	-Wswitch -Werror=tautological-compare -Werror=trigraphs -Wunused-function \
-	-Werror=empty-body -Wimplicit-fallthrough
+	-Werror=empty-body -Wimplicit-fallthrough \
 	-Werror=shift-negative-value -Werror=unused-but-set-parameter \
 	-Wno-address-of-packed-member
 

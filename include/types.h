@@ -44,39 +44,50 @@ typedef _Bool bool;
 #define PLATFORM_ARCH "x86-64"
 #define PLATFORM_X86_64
 #elif (defined(__arm__) || defined(__ARMEL__))
-#define PLATFORM_ARCH "ARM-32"
+#define PLATFORM_ARCH "arm-32"
 #define PLATFORM_ARM_32
 #elif (defined(__aarch64__))
-#define PLATFORM_ARCH "AARCH-64"
+#define PLATFORM_ARCH "aarch-64"
 #define PLATFORM_AARCH_64
 #elif (defined(__riscv) || defined(__riscv__))
-#define PLATFORM_ARCH "RISC-V"
+#define PLATFORM_ARCH "risc-v"
 #define PLATFORM_RISC_V
 #endif
 
-#if (defined(__clang__))
-#define PLATFORM_COMPILER_NAME "Clang"
-#define PLATFORM_COMPILER_VERSION_MINOR __clang_minor__
-#define PLATFORM_COMPILER_VERSION_MAJOR __clang_major__
-#elif (defined(__INTEL_COMPILER))
+#if (defined(__INTEL_COMPILER))
 #define PLATFORM_COMPILER_NAME "Intel compiler"
 #define PLATFORM_COMPILER_VERSION_MINOR (__INTEL_COMPILER % 100)
 #define PLATFORM_COMPILER_VERSION_MAJOR (__INTEL_COMPILER / 100)
+#elif (defined(__clang__))
+#define PLATFORM_COMPILER_NAME "Clang"
+#define PLATFORM_COMPILER_VERSION_MINOR __clang_minor__
+#define PLATFORM_COMPILER_VERSION_MAJOR __clang_major__
 #elif (defined(__MINGW32__) || defined(__MINGW64__))
-#define PLATFORM_COMPILER_NAME "MINGW"
+#define PLATFORM_COMPILER_NAME "MinGW"
 #define PLATFORM_COMPILER_VERSION_MINOR __GNUC_MINOR__
 #define PLATFORM_COMPILER_VERSION_MAJOR __GNUC__
+#elif (defined(__TINYC__))
+#define PLATFORM_COMPILER_NAME "TinyCC"
+#define PLATFORM_COMPILER_VERSION_MINOR (__TINYC__ % 100)
+#define PLATFORM_COMPILER_VERSION_MAJOR (__TINYC__ / 100)
 #elif (defined(__GNUC__) || defined(__GNUC_MINOR__) || defined(__GNUC_PATCHLEVEL__))
 #define PLATFORM_COMPILER_NAME "GCC"
 #define PLATFORM_COMPILER_VERSION_MINOR __GNUC_MINOR__
 #define PLATFORM_COMPILER_VERSION_MAJOR __GNUC__
 #elif (defined(_MSC_VER))
 #define PLATFORM_COMPILER_NAME "MSVC"
-#define PLATFORM_COMPILER_VERSION_MINOR (_MSC_VER / 100)
-#define PLATFORM_COMPILER_VERSION_MAJOR (_MSC_VER % 100)
+#define PLATFORM_COMPILER_VERSION_MAJOR (_MSC_VER / 100)
+#define PLATFORM_COMPILER_VERSION_MINOR (_MSC_VER % 100)
+#else
+#define PLATFORM_COMPILER_NAME "Unknown"
+#define PLATFORM_COMPILER_VERSION_MAJOR 0
+#define PLATFORM_COMPILER_VERSION_MINOR 0
 #endif
 
-#define REMU80386_INFO ("REMU80386, compiled using " PLATFORM_COMPILER_NAME " %i.%.2i for " PLATFORM_NAME " " PLATFORM_ARCH)
+#define REMU80386_VER_MAJOR 0
+#define REMU80386_VER_MINOR 2
+
+#define REMU80386_INFO "remu80386 %i.%i -- a 80386 emulator, compiled using " PLATFORM_COMPILER_NAME " %i.%i for " PLATFORM_NAME " " PLATFORM_ARCH
 
 #if defined(PLATFORM_X86_64) || defined(PLATFORM_AARCH_64)
 #define BITS_64
@@ -86,8 +97,10 @@ typedef _Bool bool;
 
 #ifdef IS_UNIX
 #define SEPERATOR "│"
+#define PATH_DELIMETER "/"
 #else
 #define SEPERATOR "|"
+#define PATH_DELIMETER "\\"
 #endif
 
 typedef unsigned char uint8;

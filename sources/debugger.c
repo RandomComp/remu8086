@@ -15,7 +15,7 @@
 #include "linenoise.h"
 #endif
 
-#include "cpu.h"
+#include "cpu/x86/cpu_x86.h"
 #include "opcodes.h"
 
 #include "utils.h"
@@ -524,7 +524,7 @@ void _map_free(debugger_sym_map_t* map, const char* file, unsigned int line) {
 	if (!map) return;
 
 	if (map->map_freed) {
-		printf("Double map free at %s::%u\n\r", __FILE__, __LINE__);
+		printf("Double map free with non-null pointer at %s::%u\n\r", __FILE__, __LINE__);
 
 		abort();
 	}
@@ -621,13 +621,14 @@ int show_help(const char* command) {
 }
 
 int show_instruction_help(byte opcode, int tab_level, instruction_t inst) {
-	if (!is_valid_instruction(inst) &&
-		!is_valid_group(inst)) return -1;
+	if (!is_valid_instruction(inst) && !is_valid_group(inst)) return -1;
+	
+	bool description_available = inst.description && (strlen(inst.description) > 0);
 
 	printf("%*sOpcode: 0x%.2x\n\r", tab_level * 4, "", opcode);
 	printf("%*sMnemonic: %s\n\r", tab_level * 4, "", inst.mnemonic);
 	printf("%*sOperands: %s\n\r", tab_level * 4, "", inst.operands);
-	printf("%*sDescription: %s\n\r", tab_level * 4, "", inst.description);
+	printf("%*sDescription: %s\n\r", tab_level * 4, "", description_available ? inst.description : "N/A");
 
 	printf("%*sGroup: %s\n\r\n\r", tab_level * 4, "", inst.group.insts ? "yes" : "no");
 
@@ -643,14 +644,30 @@ int show_instruction_help(byte opcode, int tab_level, instruction_t inst) {
 }
 
 void show_commands_help(void) {
+	size_t max_command_len = 0;
+	size_t max_description_len = 0;
+
 	for (size_t i = 0; i < commands_cnt; i++) {
-		printf("    %-6s " SEPERATOR " %-50s " SEPERATOR "\n\r", commands[i].command, commands[i].description);
+		size_t command_len = strlen(commands[i].command);
+		size_t description_len = strlen(commands[i].description);
+
+		if (command_len > max_command_len) {
+			max_command_len = command_len;
+		}
+
+		if (description_len > max_description_len) {
+			max_description_len = description_len;
+		}
+	}
+
+	for (size_t i = 0; i < commands_cnt; i++) {
+		printf("    %-*s " SEPERATOR " %-*s " SEPERATOR "\n\r", (int)max_command_len, commands[i].command, (int)max_description_len, commands[i].description);
 	}
 
 	printf("Note: use @ to set address offset where the command should run.\n\r\n\r");
 }
 
-int debugger_help(debugger_state state, const char** argv, size_t argc) {
+int debugger_help(debugger_state* state, const char** argv, size_t argc) {
 	if (argc >= 2) {
 		int err = 0;
 
@@ -663,7 +680,7 @@ int debugger_help(debugger_state state, const char** argv, size_t argc) {
 
 			for (size_t j = 0; j < REGISTERS_MAX_CNT; j++) {
 				if (strcmp(arg, registers_name[j]) == 0) {
-					cpu_dump_reg(state.cpu, j);
+					cpu_dump_reg(state->cpu, j);
 
 					err = 0;
 
@@ -676,12 +693,12 @@ int debugger_help(debugger_state state, const char** argv, size_t argc) {
 			if (strncmp(arg, "0x", 2) == 0) {
 				char* endptr = nullptr;
 
-				uint64 byte = MIN(0xFF, parse_num(arg, &endptr));
+				uint64 byte_value = MIN(0xFF, parse_num(arg, &endptr));
 
 				if (endptr == (argv[1] + strlen(argv[1]))) {
-					instruction_t inst = one_bytes_instructions[byte];
+					instruction_t inst = one_bytes_instructions[byte_value];
 
-					err = show_instruction_help(byte, 1, inst);
+					err = show_instruction_help(byte_value, 1, inst);
 				}
 			}
 
@@ -713,7 +730,7 @@ int debugger_help(debugger_state state, const char** argv, size_t argc) {
 	return 0;
 }
 
-int debugger_num(debugger_state state, const char** argv, size_t argc) {
+int debugger_num(debugger_state* state, const char** argv, size_t argc) {
 	for (size_t i = 1; i < argc; i++) {
 		size_t arg_len = strlen(argv[i]);
 
@@ -729,9 +746,11 @@ int debugger_num(debugger_state state, const char** argv, size_t argc) {
 			for (size_t j = 0; j < MIN(8, arg_len); j++) {
 				uint64 c = (uint64)argv[i][j];
 
+				#ifdef PLATFORM_X86_64
 				if (argv[i][j] < 0) {
 					c = (uint64)((int64)argv[i][j] + 128);
 				}
+				#endif
 
 				number |= c << (j * 8);
 			}
@@ -777,7 +796,7 @@ int debugger_num(debugger_state state, const char** argv, size_t argc) {
 	return 0;
 }
 
-int debugger_modrm(debugger_state state, const char** argv, size_t argc) {
+int debugger_modrm(debugger_state* state, const char** argv, size_t argc) {
 	if (argc <= 1) {
 		show_help(argv[0]);
 
@@ -843,7 +862,7 @@ int debugger_modrm(debugger_state state, const char** argv, size_t argc) {
 			printf("    index      = %.3b (%s)\n\r", sib.index_reg, registers_name[sib.index_reg]);
 			printf("    scale      =  %.2b (base + index * %u)\n\r\n\r", sib.scale, 1 << sib.scale);
 
-			const char* sib_disassembled = sib_disassemble(modrm.mod, state.cpu, bytes + 1, bytes_cnt - 1);
+			const char* sib_disassembled = sib_disassemble(modrm.mod, state->cpu, bytes + 1, bytes_cnt - 1);
 
 			printf("    [%s], %s\n\r", sib_disassembled, registers_name[modrm.reg]);
 			printf("    or\n\r");
@@ -908,7 +927,7 @@ int debugger_modrm(debugger_state state, const char** argv, size_t argc) {
 	return 0;
 }
 
-int debugger_insts(debugger_state state, const char** argv, size_t argc) {
+int debugger_insts(debugger_state* state, const char** argv, size_t argc) {
 	printf("Available instructions: \n\r");
 	printf("One byte instruction table: \n\r");
 
@@ -979,7 +998,7 @@ int debugger_insts(debugger_state state, const char** argv, size_t argc) {
 	return 0;
 }
 
-int debugger_disx(debugger_state state, const char** argv, size_t argc) {
+int debugger_disx(debugger_state* state, const char** argv, size_t argc) {
 	if (argc <= 1) {
 		show_help(argv[0]);
 
@@ -1000,61 +1019,61 @@ int debugger_disx(debugger_state state, const char** argv, size_t argc) {
 		return 1;
 	}
 
-	uint32 src_eip = state.cpu->eip;
+	uint32 src_pc = state->cpu->pc;
 
-	state.cpu->eip = 0;
+	state->cpu->pc = 0;
 
-	cpu_mode_e src_reg_mode 	= state.cpu->cur_reg_mode;
-	cpu_mode_e src_address_mode = state.cpu->cur_address_mode;
+	cpu_mode_e src_reg_mode 	= state->cpu->cur_reg_mode;
+	cpu_mode_e src_address_mode = state->cpu->cur_address_mode;
 
-	while (state.cpu->eip < dis_buf_cnt) {
+	while (state->cpu->pc < dis_buf_cnt) {
 		instruction_t result = { 0 };
 
 		ssize_t bytes_cnt = 0;
 		
-		ssize_t real_bytes = remu_decode_instruction(&result, state.cpu, dis_buf + state.cpu->eip, dis_buf_cnt - state.cpu->eip, &bytes_cnt);
+		ssize_t real_bytes = remu_decode_instruction(&result, state->cpu, dis_buf + state->cpu->pc, dis_buf_cnt - state->cpu->pc, &bytes_cnt);
 
 		ssize_t prefix_bytes = real_bytes - bytes_cnt;
 		
 		if (!result.handler || !result.is || !result.disassemble) {
 			printf("invalid\n\r");
 			
-			state.cpu->eip += 1;
+			state->cpu->pc += 1;
 
 			continue;
 		}
 
-		const char* disassembled = result.disassemble(state.cpu, dis_buf + state.cpu->eip + prefix_bytes, dis_buf_cnt - state.cpu->eip - prefix_bytes);
+		const char* disassembled = result.disassemble(state->cpu, dis_buf + state->cpu->pc + prefix_bytes, dis_buf_cnt - state->cpu->pc - prefix_bytes);
 
 		if (!disassembled) {
 			printf("invalid\n\r");
 			
-			state.cpu->eip += 1;
+			state->cpu->pc += 1;
 
 			continue;
 		}
 
 		printf("    %s\n\r", disassembled);
 
-		state.cpu->eip += real_bytes;
+		state->cpu->pc += real_bytes;
 	}
 
-	state.cpu->eip = src_eip;
+	state->cpu->pc = src_pc;
 
-	state.cpu->cur_reg_mode = src_reg_mode;
-	state.cpu->cur_address_mode = src_address_mode;
+	state->cpu->cur_reg_mode = src_reg_mode;
+	state->cpu->cur_address_mode = src_address_mode;
 
 	return 0;
 }
 
-int debugger_dis(debugger_state state, const char** argv, size_t argc) {
+int debugger_dis(debugger_state* state, const char** argv, size_t argc) {
 	if (argc <= 1) {
 		show_help(argv[0]);
 
 		return 1;
 	}
 
-	uint32 src_eip = state.cpu->eip;
+	uint32 src_pc = state->cpu->pc;
 
 	bool at_for_cmd = false; size_t at_arg = 2;
 
@@ -1065,7 +1084,7 @@ int debugger_dis(debugger_state state, const char** argv, size_t argc) {
 		}
 	}
 
-	uint32 offset = state.cpu->eip;
+	uint32 offset = state->cpu->pc;
 
 	if (at_for_cmd) {
 		if (argc > at_arg) {
@@ -1097,13 +1116,13 @@ int debugger_dis(debugger_state state, const char** argv, size_t argc) {
 		}
 	}
 	
-	state.cpu->eip = offset;
+	state->cpu->pc = offset;
 
 	for (ssize_t i = 0; i < number; i++) {
-		int err = execute_inst(argv[0], state.cpu, false, false, true, -1, &show_remaining_opcodes_if_invalid);
+		int err = execute_inst(argv[0], state->cpu, false, false, true, -1, &show_remaining_opcodes_if_invalid);
 
 		if (err < 0) {
-			state.cpu->eip = src_eip;
+			state->cpu->pc = src_pc;
 
 			return err;
 		}
@@ -1111,17 +1130,17 @@ int debugger_dis(debugger_state state, const char** argv, size_t argc) {
 		if (err == INSTRUCTION_ERR_EXIT) break;
 	}
 
-	state.cpu->eip = src_eip;
+	state->cpu->pc = src_pc;
 
 	return 0;
 }
 
-int debugger_run(debugger_state state, const char** argv, size_t argc) {
+int debugger_run(debugger_state* state, const char** argv, size_t argc) {
 	bool show_remaining_opcodes_if_invalid = true;
 
 	size_t executed = 0;
 
-	uint32 src_eip = state.cpu->eip;
+	uint32 src_pc = state->cpu->pc;
 
 	bool at_for_cmd = false; size_t at_arg = 2;
 
@@ -1132,7 +1151,7 @@ int debugger_run(debugger_state state, const char** argv, size_t argc) {
 		}
 	}
 
-	uint32 offset = state.cpu->eip;
+	uint32 offset = state->cpu->pc;
 
 	if (at_for_cmd) {
 		if (argc > at_arg) {
@@ -1148,10 +1167,10 @@ int debugger_run(debugger_state state, const char** argv, size_t argc) {
 		}
 	}
 
-	state.cpu->eip = offset;
+	state->cpu->pc = offset;
 
 	while (executed < 1000) {
-		int err = execute_inst(argv[0], state.cpu, false, false, false, state.program_end, &show_remaining_opcodes_if_invalid);
+		int err = execute_inst(argv[0], state->cpu, false, false, false, state->program_end, &show_remaining_opcodes_if_invalid);
 
 		if (err < 0) return err;
 
@@ -1160,12 +1179,12 @@ int debugger_run(debugger_state state, const char** argv, size_t argc) {
 		executed++;
 	}
 
-	state.cpu->eip = src_eip;
+	state->cpu->pc = src_pc;
 
 	return 0;
 }
 
-int debugger_n(debugger_state state, const char** argv, size_t argc) {
+int debugger_n(debugger_state* state, const char** argv, size_t argc) {
 	bool show_remaining_opcodes_if_invalid = true;
 
 	uint64 number = 1;
@@ -1183,7 +1202,7 @@ int debugger_n(debugger_state state, const char** argv, size_t argc) {
 	}
 
 	for (size_t i = 0; i < number; i++) {
-		int err = execute_inst(argv[0], state.cpu, false, false, false, state.program_end, &show_remaining_opcodes_if_invalid);
+		int err = execute_inst(argv[0], state->cpu, false, false, false, state->program_end, &show_remaining_opcodes_if_invalid);
 
 		if (err < 0) return err;
 
@@ -1193,7 +1212,7 @@ int debugger_n(debugger_state state, const char** argv, size_t argc) {
 	return 0;
 }
 
-int debugger_sn(debugger_state state, const char** argv, size_t argc) {
+int debugger_sn(debugger_state* state, const char** argv, size_t argc) {
 	if (argc <= 1) {
 		show_help(argv[0]);
 
@@ -1209,7 +1228,7 @@ int debugger_sn(debugger_state state, const char** argv, size_t argc) {
 		}
 	}
 
-	uint32 offset = state.cpu->eip;
+	uint32 offset = state->cpu->pc;
 
 	if (at_for_cmd) {
 		if (argc >= at_arg + 1) {
@@ -1237,12 +1256,12 @@ int debugger_sn(debugger_state state, const char** argv, size_t argc) {
 		return 1;
 	}
 
-	state.cpu->eip = offset + number;
+	state->cpu->pc = offset + number;
 		
 	return 0;
 }
 
-int debugger_sb(debugger_state state, const char** argv, size_t argc) {
+int debugger_sb(debugger_state* state, const char** argv, size_t argc) {
 	if (argc <= 1) {
 		show_help(argv[0]);
 
@@ -1258,7 +1277,7 @@ int debugger_sb(debugger_state state, const char** argv, size_t argc) {
 		}
 	}
 
-	uint32 offset = state.cpu->eip;
+	uint32 offset = state->cpu->pc;
 
 	if (at_for_cmd) {
 		if (argc > at_arg) {
@@ -1286,12 +1305,12 @@ int debugger_sb(debugger_state state, const char** argv, size_t argc) {
 		return 1;
 	}
 
-	state.cpu->eip = offset - number;
+	state->cpu->pc = offset - number;
 
 	return 0;
 }
 
-int debugger_sin(debugger_state state, const char** argv, size_t argc) {
+int debugger_sin(debugger_state* state, const char** argv, size_t argc) {
 	if (argc <= 1) {
 		show_help(argv[0]);
 
@@ -1335,26 +1354,26 @@ int debugger_sin(debugger_state state, const char** argv, size_t argc) {
 		return 1;
 	}
 
-	state.cpu->eip = offset;
+	state->cpu->pc = offset;
 		
 	for (uint64 i = 0; i < number; i++) {
 		instruction_t instruction = { 0 };
 
-		ssize_t bytes_cnt = remu_decode_instruction(&instruction, state.cpu, state.cpu->ram + state.cpu->eip, state.program_end - state.program_start, nullptr);
+		ssize_t bytes_cnt = remu_decode_instruction(&instruction, state->cpu, state->cpu->ram + state->cpu->pc, state->program_end - state->program_start, nullptr);
 
 		if (bytes_cnt < 0) {
-			state.cpu->eip += number;
+			state->cpu->pc += number;
 
 			break;
 		}
 
-		state.cpu->eip += bytes_cnt;
+		state->cpu->pc += bytes_cnt;
 	}
 
 	return 0;
 }
 
-int debugger_sib(debugger_state state, const char** argv, size_t argc) {
+int debugger_sib(debugger_state* state, const char** argv, size_t argc) {
 	if (argc <= 1) {
 		show_help(argv[0]);
 
@@ -1398,26 +1417,26 @@ int debugger_sib(debugger_state state, const char** argv, size_t argc) {
 		return 1;
 	}
 
-	state.cpu->eip = offset;
+	state->cpu->pc = offset;
 		
 	for (uint64 i = 0; i < number; i++) {
 		instruction_t instruction = { 0 };
 
-		ssize_t bytes_cnt = remu_decode_instruction(&instruction, state.cpu, state.cpu->ram + state.cpu->eip, state.program_end - state.program_start, nullptr);
+		ssize_t bytes_cnt = remu_decode_instruction(&instruction, state->cpu, state->cpu->ram + state->cpu->pc, state->program_end - state->program_start, nullptr);
 
 		if (bytes_cnt < 0) {
-			state.cpu->eip -= number;
+			state->cpu->pc -= number;
 
 			break;
 		}
 
-		state.cpu->eip -= bytes_cnt;
+		state->cpu->pc -= bytes_cnt;
 	}
 		
 	return 0;
 }
 
-int debugger_s(debugger_state state, const char** argv, size_t argc) {
+int debugger_s(debugger_state* state, const char** argv, size_t argc) {
 	if (argc <= 1) {
 		show_help(argv[0]);
 
@@ -1458,15 +1477,15 @@ int debugger_s(debugger_state state, const char** argv, size_t argc) {
 	}
 
 	if (number < 0) {
-		number = ((number % state.cpu->ram_size) + state.cpu->ram_size) % state.cpu->ram_size;
+		number = ((number % state->cpu->ram_size) + state->cpu->ram_size) % state->cpu->ram_size;
 	}
 
-	state.cpu->eip = number;
+	state->cpu->pc = number;
 
 	return 0;
 }
 
-int debugger_echo(debugger_state state, const char** argv, size_t argc) {
+int debugger_echo(debugger_state* state, const char** argv, size_t argc) {
 	for (size_t i = 1; i < argc; i++) {
 		printf("%s ", argv[i]);
 	}
@@ -1476,32 +1495,32 @@ int debugger_echo(debugger_state state, const char** argv, size_t argc) {
 	return 0;
 }
 
-int debugger_cpu(debugger_state state, const char** argv, size_t argc) {
-	cpu_dump(state.cpu);
+int debugger_cpu(debugger_state* state, const char** argv, size_t argc) {
+	cpu_dump(state->cpu);
 
 	return 0;
 }
 
-int debugger_stack(debugger_state state, const char** argv, size_t argc) {
-	stack_dump(state.cpu);
+int debugger_stack(debugger_state* state, const char** argv, size_t argc) {
+	stack_dump(state->cpu);
 
 	return 0;
 }
 
-int debugger_bt(debugger_state state, const char** argv, size_t argc) {
-	if (!state.cpu->call_stack) {
+int debugger_bt(debugger_state* state, const char** argv, size_t argc) {
+	if (!state->cpu->call_stack) {
 		printf("%s: cannot show backtrace becase backtrace is not setuped\n\r", argv[0]);
 
 		return 1;
 	}
 
-	ssize_t call_stack_size = (state.cpu->call_stack + state.cpu->call_stack_size) - state.cpu->call_stack_end;
+	ssize_t call_stack_size = (state->cpu->call_stack + state->cpu->call_stack_size) - state->cpu->call_stack_end;
 
 	for (ssize_t i = 0; i < call_stack_size; i += 4) {
-		uint32 addr = 	(state.cpu->call_stack[state.cpu->call_stack_size - i + 0] << 0) |
-						(state.cpu->call_stack[state.cpu->call_stack_size - i + 1] << 8) |
-						(state.cpu->call_stack[state.cpu->call_stack_size - i + 2] << 16)|
-						(state.cpu->call_stack[state.cpu->call_stack_size - i + 3] << 24);
+		uint32 addr = 	(state->cpu->call_stack[state->cpu->call_stack_size - i + 0] << 0) |
+						(state->cpu->call_stack[state->cpu->call_stack_size - i + 1] << 8) |
+						(state->cpu->call_stack[state->cpu->call_stack_size - i + 2] << 16)|
+						(state->cpu->call_stack[state->cpu->call_stack_size - i + 3] << 24);
 
 		printf("0x%.8x\n\r", addr);
 	}
@@ -1509,14 +1528,14 @@ int debugger_bt(debugger_state state, const char** argv, size_t argc) {
 	return 0;
 }
 
-int debugger_wx(debugger_state state, const char** argv, size_t argc) {
+int debugger_wx(debugger_state* state, const char** argv, size_t argc) {
 	if (argc <= 1) {
 		show_help(argv[0]);
 
 		return 1;
 	}
 
-	uint32 src_eip = state.cpu->eip;
+	uint32 src_pc = state->cpu->pc;
 
 	bool at_for_cmd = false; size_t at_arg = 2;
 
@@ -1527,7 +1546,7 @@ int debugger_wx(debugger_state state, const char** argv, size_t argc) {
 		}
 	}
 
-	uint32 offset = state.cpu->eip;
+	uint32 offset = state->cpu->pc;
 
 	if (at_for_cmd) {
 		if (argc > at_arg) {
@@ -1565,20 +1584,20 @@ int debugger_wx(debugger_state state, const char** argv, size_t argc) {
 		wx_buf_cnt += buf_cnt;
 	}
 
-	uint32 src_clock = state.cpu->clock;
+	uint32 src_clock = state->cpu->clock;
 
-	state.cpu->eip = offset;
+	state->cpu->pc = offset;
 
 	int err = 0;
 
 	for (size_t i = 0; i < wx_buf_cnt; i++) {
-		err = write_byte(state.cpu, state.cpu->eip + i, wx_buf[i]);
+		err = write_byte(state->cpu, state->cpu->pc + i, wx_buf[i]);
 
 		if (err < 0) break;
 	}
 
 	if (err < 0) {
-		printf("%s: While trying to write bytes on address 0x%x an error occured:\n\r", argv[0], state.cpu->eip);
+		printf("%s: While trying to write bytes on address 0x%x an error occured:\n\r", argv[0], state->cpu->pc);
 
 		printf("        %s\n\r", get_cpu_err_msg(err));
 
@@ -1586,17 +1605,17 @@ int debugger_wx(debugger_state state, const char** argv, size_t argc) {
 	}
 
 	if (err > 0) {
-		printf("%s: warning on address 0x%x: %s\n\r", argv[0], state.cpu->eip, get_cpu_err_msg(err));
+		printf("%s: warning on address 0x%x: %s\n\r", argv[0], state->cpu->pc, get_cpu_err_msg(err));
 
 		return err;
 	}
 
-	state.cpu->eip += wx_buf_cnt;
+	state->cpu->pc += wx_buf_cnt;
 
-	state.cpu->clock = src_clock;
+	state->cpu->clock = src_clock;
 
 	if (at_for_cmd) {
-		state.cpu->eip = src_eip;
+		state->cpu->pc = src_pc;
 	}
 
 	printf("Writed %zu bytes\n\r", wx_buf_cnt);
@@ -1604,14 +1623,14 @@ int debugger_wx(debugger_state state, const char** argv, size_t argc) {
 	return 0;
 }
 
-int debugger_rx(debugger_state state, const char** argv, size_t argc) {
+int debugger_rx(debugger_state* state, const char** argv, size_t argc) {
 	if (argc <= 1) {
 		show_help(argv[0]);
 
 		return 1;
 	}
 
-	uint32 src_eip = state.cpu->eip;
+	uint32 src_pc = state->cpu->pc;
 
 	bool at_for_cmd = false; size_t at_arg = 2;
 
@@ -1622,7 +1641,7 @@ int debugger_rx(debugger_state state, const char** argv, size_t argc) {
 		}
 	}
 
-	uint32 offset = state.cpu->eip;
+	uint32 offset = state->cpu->pc;
 
 	if (at_for_cmd) {
 		if (argc > at_arg) {
@@ -1648,21 +1667,21 @@ int debugger_rx(debugger_state state, const char** argv, size_t argc) {
 		return 1;
 	}
 
-	uint64 ticks = state.cpu->clock;
+	uint64 ticks = state->cpu->clock;
 
-	state.cpu->eip = offset;
+	state->cpu->pc = offset;
 
-	for (uint64 i = 0; i < MIN(state.cpu->ram_size, number); i++) {
+	for (uint64 i = 0; i < MIN(state->cpu->ram_size, number); i++) {
 		byte num = 0;
 
-		read_byte(state.cpu, state.cpu->eip + i, &num);
+		read_byte(state->cpu, state->cpu->pc + i, &num);
 
 		printf("0x%.2x ", num);
 	}
 
-	state.cpu->eip = src_eip;
+	state->cpu->pc = src_pc;
 
-	state.cpu->clock = ticks;
+	state->cpu->clock = ticks;
 
 	printf("\n\r");
 
@@ -1671,14 +1690,14 @@ int debugger_rx(debugger_state state, const char** argv, size_t argc) {
 	return 0;
 }
 
-int debugger_ws(debugger_state state, const char** argv, size_t argc) {
+int debugger_ws(debugger_state* state, const char** argv, size_t argc) {
 	if (argc <= 1) {
 		show_help(argv[0]);
 
 		return 1;
 	}
 
-	uint32 src_eip = state.cpu->eip;
+	uint32 src_pc = state->cpu->pc;
 
 	bool at_for_cmd = false; size_t at_arg = 2;
 
@@ -1689,7 +1708,7 @@ int debugger_ws(debugger_state state, const char** argv, size_t argc) {
 		}
 	}
 
-	uint32 offset = state.cpu->eip;
+	uint32 offset = state->cpu->pc;
 
 	if (at_for_cmd) {
 		if (argc > at_arg) {
@@ -1705,9 +1724,9 @@ int debugger_ws(debugger_state state, const char** argv, size_t argc) {
 		}
 	}
 
-	uint32 src_clock = state.cpu->clock;
+	uint32 src_clock = state->cpu->clock;
 
-	state.cpu->eip = offset;
+	state->cpu->pc = offset;
 
 	int err = 0;
 
@@ -1721,7 +1740,7 @@ int debugger_ws(debugger_state state, const char** argv, size_t argc) {
 		size_t arg_len = strlen(arg);
 
 		for (size_t j = 0; j < arg_len; j++) {
-			err = write_byte(state.cpu, state.cpu->eip + j, arg[j]);
+			err = write_byte(state->cpu, state->cpu->pc + j, arg[j]);
 
 			if (err < 0) {
 				ok = false;
@@ -1736,7 +1755,7 @@ int debugger_ws(debugger_state state, const char** argv, size_t argc) {
 	}
 
 	if (err < 0) {
-		printf("%s: While trying to write bytes on address 0x%x an error occured:\n\r", argv[0], state.cpu->eip);
+		printf("%s: While trying to write bytes on address 0x%x an error occured:\n\r", argv[0], state->cpu->pc);
 
 		printf("        %s\n\r", get_cpu_err_msg(err));
 
@@ -1744,17 +1763,17 @@ int debugger_ws(debugger_state state, const char** argv, size_t argc) {
 	}
 
 	if (err > 0) {
-		printf("%s: warning on address 0x%x: %s\n\r", argv[0], state.cpu->eip, get_cpu_err_msg(err));
+		printf("%s: warning on address 0x%x: %s\n\r", argv[0], state->cpu->pc, get_cpu_err_msg(err));
 
 		return err;
 	}
 
-	state.cpu->clock = src_clock;
+	state->cpu->clock = src_clock;
 	
-	state.cpu->eip += writed_cnt;
+	state->cpu->pc += writed_cnt;
 
 	if (at_for_cmd) {
-		state.cpu->eip = src_eip;
+		state->cpu->pc = src_pc;
 	}
 
 	printf("Writed %zu bytes\n\r", writed_cnt);
@@ -1762,14 +1781,14 @@ int debugger_ws(debugger_state state, const char** argv, size_t argc) {
 	return 0;
 }
 
-int debugger_rs(debugger_state state, const char** argv, size_t argc) {
+int debugger_rs(debugger_state* state, const char** argv, size_t argc) {
 	if (argc <= 1) {
 		show_help(argv[0]);
 
 		return 1;
 	}
 
-	uint32 src_eip = state.cpu->eip;
+	uint32 src_pc = state->cpu->pc;
 
 	bool at_for_cmd = false; size_t at_arg = 2;
 
@@ -1780,7 +1799,7 @@ int debugger_rs(debugger_state state, const char** argv, size_t argc) {
 		}
 	}
 
-	uint32 offset = state.cpu->eip;
+	uint32 offset = state->cpu->pc;
 
 	if (at_for_cmd) {
 		if (argc > at_arg) {
@@ -1806,16 +1825,16 @@ int debugger_rs(debugger_state state, const char** argv, size_t argc) {
 		return 1;
 	}
 
-	uint64 ticks = state.cpu->clock;
+	uint64 ticks = state->cpu->clock;
 
-	state.cpu->eip = offset;
+	state->cpu->pc = offset;
 
 	printf("\"");
 
-	for (uint64 i = 0; i < MIN(state.cpu->ram_size, number); i++) {
+	for (uint64 i = 0; i < MIN(state->cpu->ram_size, number); i++) {
 		byte num = 0;
 
-		read_byte(state.cpu, state.cpu->eip + i, &num);
+		read_byte(state->cpu, state->cpu->pc + i, &num);
 
 		if (num == '\n') {
 			printf("\\n");
@@ -1844,9 +1863,9 @@ int debugger_rs(debugger_state state, const char** argv, size_t argc) {
 
 	printf("\"\n\r");
 
-	state.cpu->eip = src_eip;
+	state->cpu->pc = src_pc;
 
-	state.cpu->clock = ticks;
+	state->cpu->clock = ticks;
 
 	printf("Readed %llu bytes\n\r", number);
 
@@ -1855,7 +1874,7 @@ int debugger_rs(debugger_state state, const char** argv, size_t argc) {
 
 extern debugger_sym_map_t* root;
 
-int debugger_sym(debugger_state state, const char** argv, size_t argc) {
+int debugger_sym(debugger_state* state, const char** argv, size_t argc) {
 	if (argc <= 1) {
 		show_help(argv[0]);
 
@@ -1891,7 +1910,7 @@ int debugger_sym(debugger_state state, const char** argv, size_t argc) {
 	return 0;
 }
 
-int debugger_lssym(debugger_state state, const char** argv, size_t argc) {
+int debugger_lssym(debugger_state* state, const char** argv, size_t argc) {
 	if (!root) {
 		printf("%s: no symbols to list (root not initialized)\n\r", argv[0]);
 		
@@ -1905,14 +1924,14 @@ int debugger_lssym(debugger_state state, const char** argv, size_t argc) {
 	return 0;
 }
 
-int debugger_wf(debugger_state state, const char** argv, size_t argc) {
+int debugger_wf(debugger_state* state, const char** argv, size_t argc) {
 	if (argc <= 1) {
 		show_help(argv[0]);
 
 		return 1;
 	}
 
-	uint32 src_eip = state.cpu->eip;
+	uint32 src_pc = state->cpu->pc;
 
 	bool at_for_cmd = false; size_t at_arg = 2;
 
@@ -1923,7 +1942,7 @@ int debugger_wf(debugger_state state, const char** argv, size_t argc) {
 		}
 	}
 
-	uint32 offset = state.cpu->eip;
+	uint32 offset = state->cpu->pc;
 
 	if (at_for_cmd) {
 		if (argc > at_arg) {
@@ -1953,35 +1972,35 @@ int debugger_wf(debugger_state state, const char** argv, size_t argc) {
 
 	fseek(file, 0, SEEK_SET);
 
-	state.cpu->eip = offset;
+	state->cpu->pc = offset;
 
-	ssize_t bytes = (ssize_t)MAX(state.cpu->eip, MIN(state.cpu->ram_size, state.cpu->eip + file_size)) - (ssize_t)state.cpu->eip;
+	ssize_t bytes = (ssize_t)MAX(state->cpu->pc, MIN(state->cpu->ram_size, state->cpu->pc + file_size)) - (ssize_t)state->cpu->pc;
 
 	bytes = MAX(0, bytes);
 
-	fread(state.cpu->ram + state.cpu->eip, bytes, 1, file);
+	fread(state->cpu->ram + state->cpu->pc, bytes, 1, file);
 
 	fclose(file);
 	
-	state.cpu->eip += bytes;
+	state->cpu->pc += bytes;
 
 	printf("Writed %zu bytes\n\r", bytes);
 
 	if (at_for_cmd) {
-		state.cpu->eip = src_eip;
+		state->cpu->pc = src_pc;
 	}
 
 	return 0;
 }
 
-int debugger_sf(debugger_state state, const char** argv, size_t argc) {
+int debugger_sf(debugger_state* state, const char** argv, size_t argc) {
 	if (argc <= 2) {
 		show_help(argv[0]);
 
 		return 1;
 	}
 
-	uint32 src_eip = state.cpu->eip;
+	uint32 src_pc = state->cpu->pc;
 
 	bool at_for_cmd = false; size_t at_arg = 3;
 
@@ -1992,7 +2011,7 @@ int debugger_sf(debugger_state state, const char** argv, size_t argc) {
 		}
 	}
 
-	uint32 offset = state.cpu->eip;
+	uint32 offset = state->cpu->pc;
 
 	if (at_for_cmd) {
 		if (argc > at_arg) {
@@ -2026,26 +2045,26 @@ int debugger_sf(debugger_state state, const char** argv, size_t argc) {
 		return 1;
 	}
 
-	state.cpu->eip = offset;
+	state->cpu->pc = offset;
 
-	size_t bytes = MAX(state.cpu->eip, MIN(state.cpu->ram_size, state.cpu->eip + number)) - state.cpu->eip;
+	size_t bytes = MAX(state->cpu->pc, MIN(state->cpu->ram_size, state->cpu->pc + number)) - state->cpu->pc;
 
-	fwrite(state.cpu->ram + state.cpu->eip, bytes, 1, file);
+	fwrite(state->cpu->ram + state->cpu->pc, bytes, 1, file);
 
 	fclose(file);
 
 	printf("Saved %zu bytes\n\r", bytes);
 
-	state.cpu->eip += bytes;
+	state->cpu->pc += bytes;
 
 	if (at_for_cmd) {
-		state.cpu->eip = src_eip;
+		state->cpu->pc = src_pc;
 	}
 
 	return 0;
 }
 
-int debugger_sh(debugger_state state, const char** argv, size_t argc) {
+int debugger_sh(debugger_state* state, const char** argv, size_t argc) {
 	char* line = nullptr; size_t line_len = 0;
 
 	for (size_t i = 1; i < argc; i++) {
@@ -2075,7 +2094,8 @@ int debugger_sh(debugger_state state, const char** argv, size_t argc) {
 	return err;
 }
 
-void debugger_completion(const char* text, linenoiseCompletions* completions) {
+#ifdef IS_UNIX
+	void debugger_completion(const char* text, linenoiseCompletions* completions) {
 	size_t str_len = strlen(text);
 
 	for (size_t i = 0; i < commands_cnt; i++) {
@@ -2086,6 +2106,35 @@ void debugger_completion(const char* text, linenoiseCompletions* completions) {
 		}
 	}
 }
+#endif
+
+int execute_debugger_command(debugger_state* state, const char** argv, size_t argc) {
+	if (!argv || argc <= 0) return -1;
+
+	int err = 0; bool ok = false;
+
+	for (size_t i = 0; i < commands_cnt; i++) {
+		if (strcmp(argv[0], commands[i].command) == 0) {
+			err = commands[i].handler(state, argv, argc);
+
+			ok = true;
+
+			break;
+		}
+	}
+
+	if (!ok && argv[0] && strlen(argv[0]) > 0) {
+		if (strcmp(argv[0], "q") == 0) {
+			return 500;
+		}
+
+		else {
+			return 127;
+		}
+	}
+
+	return err;
+}
 
 void debug_loop(const char* exec_name, size_t program_start, size_t program_size, cpu_t* cpu) {
 	bool quit = false;
@@ -2095,17 +2144,28 @@ void debug_loop(const char* exec_name, size_t program_start, size_t program_size
 	char prompt[16] = { 0 };
 
 	#ifdef IS_UNIX
+	const char* home_path = get_home_dir();
+
+	const char* history_filename = "remu80386_history";
+	
+	size_t history_file_size = snprintf(nullptr, 0, "%s" PATH_DELIMETER "%s", home_path, history_filename) + 1;
+	char* history_file = malloc(history_file_size);
+
+	snprintf(history_file, history_file_size, "%s" PATH_DELIMETER "%s", home_path, history_filename);
+
+	linenoiseHistoryLoad(history_file);
+
 	linenoiseHistorySetMaxLen(64);
-	#endif
 
 	linenoiseSetCompletionCallback(debugger_completion);
+	#endif
 
 	while (!quit) {
 		if (buf) {
 			free(buf); buf = nullptr;
 		}
 
-		snprintf(prompt, 16, "[0x%.8x]> ", cpu->eip);
+		snprintf(prompt, 16, "[0x%.8x]> ", cpu->pc);
 		
 		#ifdef IS_UNIX
 		buf = linenoise(prompt);
@@ -2129,9 +2189,13 @@ void debug_loop(const char* exec_name, size_t program_start, size_t program_size
 		linenoiseHistoryAdd(buf);
 		#endif
 
-		const char* command = parse_cli_args(buf);
+		debugger_state state = {
+			.cpu = cpu,
+			.program_start = program_start,
+			.program_end = program_start + program_size
+		};
 
-		if (!command) continue;
+		const char* command = parse_cli_args(buf);
 
 		const char* argv[16] = { 0 }; size_t argc = 0;
 
@@ -2143,33 +2207,15 @@ void debug_loop(const char* exec_name, size_t program_start, size_t program_size
 			argc++;
 		}
 
-		debugger_state state = {
-			.cpu = cpu,
-			.program_start = program_start,
-			.program_end = program_start + program_size
-		};
+		int err = execute_debugger_command(&state, argv, argc);
 
-		bool found = false;
-
-		for (size_t i = 0; i < commands_cnt; i++) {
-			if (strcmp(argv[0], commands[i].command) == 0) {
-				commands[i].handler(state, argv, argc);
-
-				found = true;
-
-				break;
-			}
+		if (err == 127) {
+			printf("%s: no such command. Try \"?\" or \"help\"\n\r", argv[0]);
 		}
 
-		if (!found && argv[0] && strlen(argv[0]) > 0) {
-			if (strcmp(argv[0], "q") == 0) {
-				break;
-			}
-
-			else {
-				printf("%s: no such command. Try \"?\" or \"help\"\n\r", argv[0]);
-			}
-		}
+		else if (err == 500) {
+			break;
+		} 
 	}
 
 	printf("\n\r");
@@ -2179,4 +2225,15 @@ void debug_loop(const char* exec_name, size_t program_start, size_t program_size
 	}
 
 	map_free(root);
+
+	#ifdef IS_UNIX
+	int err = linenoiseHistorySave(history_file);
+
+	if (err) {
+		printf("%s: cannot save command history: %s\n\r", exec_name, strerror(0));
+	}
+
+	free(history_file);
+
+	#endif
 }
