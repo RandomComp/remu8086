@@ -4,7 +4,7 @@
 
 #include <stdio.h>
 
-static char disassemble_buf[32] = { 0 };
+// static char disassemble_buf[32] = { 0 };
 
 ssize_t is_int3(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
 	if (bytes[0] == 0xCC) {

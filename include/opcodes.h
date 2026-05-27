@@ -36,6 +36,7 @@ typedef enum instruction_e {
 	GROUP_OP_AOCBAXC_MEM_R_N		= 0x81, // add/or/adc/sbb/and/sub/xor/cmp // TODO: Добавить в список
 	GROUP_OP_AOCBAXC_R_N			= 0x81, // add/or/adc/sbb/and/sub/xor/cmp // TODO: Добавить в список
 	GROUP_AOCBAXC_BYTE_R_N			= 0x80, // add/or/adc/sbb/and/sub/xor/cmp
+	GROUP_AOCBAXC_RMM32_N			= 0x83, // add/or/adc/sbb/and/sub/xor/cmp
 	INSTRUCTION_OR_EAX_N			= 0x0D,
 	INSTRUCTION_SHORT_JMP			= 0xEB,
 	INSTURCTION_SHORT_JO			= 0x70,
@@ -73,11 +74,6 @@ typedef enum two_byte_instruction_e {
 	TWO_BYTE_INSTRUCTION_RDTSC				= 0x31,
 	TWO_BYTE_INSTRUCTION_VMCALL 			= 0x01, // emulator call
 } two_byte_instruction_e;
-
-typedef enum instruction_mask_e {
-	INSTRUCTION_MASK_EQUAL,
-	INSTRUCTION_MASK_AND,
-} instruction_mask_e;
 
 typedef enum register_e {
 	REGISTER_EAX,
@@ -151,38 +147,6 @@ typedef struct PACKED sib_t {
 
 #define REGISTERS_CNT (REGISTER_EFLAGS - REGISTER_EAX + 1)
 
-static const char* registers_name[32] = {
-	[REGISTER_EAX] 		= 	"eax",
-	[REGISTER_ECX] 		= 	"ecx",
-	[REGISTER_EDX] 		= 	"edx",
-	[REGISTER_EBX] 		= 	"ebx",
-	[REGISTER_ESP] 		= 	"esp",
-	[REGISTER_EBP] 		= 	"ebp",
-	[REGISTER_ESI] 		= 	"esi",
-	[REGISTER_EDI] 		= 	"edi",
-	[REGISTER_EIP] 		= 	"eip",
-	[REGISTER_CS] 		= 	"cs",
-	[REGISTER_DS] 		= 	"ds",
-	[REGISTER_SS] 		= 	"ss",
-	[REGISTER_ES] 		= 	"es",
-	[REGISTER_EFLAGS] 	= 	"eflags",
-	[REGISTER_AX] 		= 	"ax",
-	[REGISTER_CX] 		= 	"cx",
-	[REGISTER_DX] 		= 	"dx",
-	[REGISTER_BX] 		= 	"bx",
-	[REGISTER_SP] 		= 	"sp",
-	[REGISTER_BP] 		= 	"bp",
-	[REGISTER_SI] 		= 	"si",
-	[REGISTER_DI] 		= 	"di",
-	[REGISTER_IP] 		= 	"ip",
-	[REGISTER_AL] 		= 	"al",
-	[REGISTER_CL] 		= 	"cl",
-	[REGISTER_DL] 		= 	"dl",
-	[REGISTER_BL] 		= 	"bl",
-	[REGISTER_AH] 		= 	"ah",
-	[REGISTER_CH] 		= 	"ch",
-	[REGISTER_DH] 		= 	"dh",
-	[REGISTER_BH] 		= 	"bh",
-};
+#define REGISTERS_MAX_CNT (REGISTER_BH - REGISTER_EAX + 1)
 
 #endif

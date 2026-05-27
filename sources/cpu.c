@@ -5,6 +5,69 @@
 #include "cpu.h"
 
 #include <stdio.h>
+#include <string.h>
+
+#include "debugger.h"
+
+const char* registers_name[32] = {
+	[REGISTER_EAX] 		= 	"eax",
+	[REGISTER_ECX] 		= 	"ecx",
+	[REGISTER_EDX] 		= 	"edx",
+	[REGISTER_EBX] 		= 	"ebx",
+	[REGISTER_ESP] 		= 	"esp",
+	[REGISTER_EBP] 		= 	"ebp",
+	[REGISTER_ESI] 		= 	"esi",
+	[REGISTER_EDI] 		= 	"edi",
+	[REGISTER_EIP] 		= 	"eip",
+	[REGISTER_CS] 		= 	"cs",
+	[REGISTER_DS] 		= 	"ds",
+	[REGISTER_SS] 		= 	"ss",
+	[REGISTER_ES] 		= 	"es",
+	[REGISTER_EFLAGS] 	= 	"eflags",
+	[REGISTER_AX] 		= 	"ax",
+	[REGISTER_CX] 		= 	"cx",
+	[REGISTER_DX] 		= 	"dx",
+	[REGISTER_BX] 		= 	"bx",
+	[REGISTER_SP] 		= 	"sp",
+	[REGISTER_BP] 		= 	"bp",
+	[REGISTER_SI] 		= 	"si",
+	[REGISTER_DI] 		= 	"di",
+	[REGISTER_IP] 		= 	"ip",
+	[REGISTER_AL] 		= 	"al",
+	[REGISTER_CL] 		= 	"cl",
+	[REGISTER_DL] 		= 	"dl",
+	[REGISTER_BL] 		= 	"bl",
+	[REGISTER_AH] 		= 	"ah",
+	[REGISTER_CH] 		= 	"ch",
+	[REGISTER_DH] 		= 	"dh",
+	[REGISTER_BH] 		= 	"bh",
+};
+
+debugger_sym_map_t* root = nullptr;
+
+bool is_valid_instruction(instruction_t inst) {
+	return inst.is && inst.handler && inst.disassemble && inst.mnemonic && inst.operands;
+}
+
+bool is_valid_group(instruction_t inst) {
+	return inst.mnemonic && inst.operands && inst.group.insts;
+}
+
+char* get_named_address(uint64 address) {
+	debugger_sym_map_t* symbol = get_symbol_by_address(root, address);
+
+	if (!root || !symbol) {
+		size_t result_size = snprintf(nullptr, 0, "0x%llx", address) + 1;
+
+		char* result = malloc(result_size);
+
+		snprintf(result, result_size, "0x%llx", address);
+
+		return result;
+	}
+
+	return map_str_symbol(symbol, address, true);
+}
 
 ssize_t is_nop(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
 	if (bytes[0] == 0x90) {
@@ -47,7 +110,9 @@ int short_jmp(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
 const char* short_jmp_disassemble(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
 	char offset = (char)(bytes[1]);
 
-	snprintf(disassemble_buf, 32, "jmp 0x%x", cpu->eip + 2 + offset);
+	char* buf = get_named_address(cpu->eip + offset + 2);
+
+	snprintf(disassemble_buf, 32, "jmp %s", buf);
 
 	return disassemble_buf;
 }
@@ -74,7 +139,9 @@ int short_jo(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
 const char* short_jo_disassemble(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
 	char offset = (char)(bytes[1]);
 
-	snprintf(disassemble_buf, 32, "jo %u", cpu->eip + offset);
+	char* buf = get_named_address(cpu->eip + offset + 2);
+
+	snprintf(disassemble_buf, 32, "jo %s", buf);
 
 	return disassemble_buf;
 }
@@ -101,7 +168,9 @@ int short_jno(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
 const char* short_jno_disassemble(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
 	char offset = (char)(bytes[1]);
 
-	snprintf(disassemble_buf, 32, "jno %u", cpu->eip + offset);
+	char* buf = get_named_address(cpu->eip + offset + 2);
+
+	snprintf(disassemble_buf, 32, "jno %s", buf);
 
 	return disassemble_buf;
 }
@@ -128,7 +197,9 @@ int short_jc(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
 const char* short_jc_disassemble(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
 	char offset = (char)(bytes[1]);
 
-	snprintf(disassemble_buf, 32, "jc 0x%x", cpu->eip + (char)offset + 2);
+	char* buf = get_named_address(cpu->eip + offset + 2);
+
+	snprintf(disassemble_buf, 32, "jc %s", buf);
 
 	return disassemble_buf;
 }
@@ -155,7 +226,9 @@ int short_jnc(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
 const char* short_jnc_disassemble(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
 	char offset = (char)(bytes[1]);
 
-	snprintf(disassemble_buf, 32, "jnc 0x%x", cpu->eip + (char)offset + 2);
+	char* buf = get_named_address(cpu->eip + offset + 2);
+
+	snprintf(disassemble_buf, 32, "jnc %s", buf);
 
 	return disassemble_buf;
 }
@@ -182,7 +255,9 @@ int short_jz(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
 const char* short_jz_disassemble(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
 	char offset = (char)(bytes[1]);
 
-	snprintf(disassemble_buf, 32, "jz 0x%x", cpu->eip + (char)offset + 2);
+	char* buf = get_named_address(cpu->eip + offset + 2);
+
+	snprintf(disassemble_buf, 32, "jz %s", buf);
 
 	return disassemble_buf;
 }
@@ -209,7 +284,9 @@ int short_jnz(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
 const char* short_jnz_disassemble(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
 	char offset = (char)(bytes[1]);
 
-	snprintf(disassemble_buf, 32, "jnz 0x%x", cpu->eip + (char)offset + 2);
+	char* buf = get_named_address(cpu->eip + offset + 2);
+
+	snprintf(disassemble_buf, 32, "jnz %s", buf);
 
 	return disassemble_buf;
 }
@@ -236,7 +313,9 @@ int short_jcz(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
 const char* short_jcz_disassemble(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
 	char offset = (char)(bytes[1]);
 
-	snprintf(disassemble_buf, 32, "jcz 0x%x", cpu->eip + (char)offset + 2);
+	char* buf = get_named_address(cpu->eip + offset + 2);
+
+	snprintf(disassemble_buf, 32, "jcz %s", buf);
 
 	return disassemble_buf;
 }
@@ -263,7 +342,9 @@ int short_jncz(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
 const char* short_jncz_disassemble(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
 	char offset = (char)(bytes[1]);
 
-	snprintf(disassemble_buf, 32, "jncz 0x%x", cpu->eip + (char)offset + 2);
+	char* buf = get_named_address(cpu->eip + offset + 2);
+
+	snprintf(disassemble_buf, 32, "jncz %s", buf);
 
 	return disassemble_buf;
 }
@@ -290,7 +371,9 @@ int short_js(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
 const char* short_js_disassemble(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
 	char offset = (char)(bytes[1]);
 
-	snprintf(disassemble_buf, 32, "js 0x%x", cpu->eip + (char)offset + 2);
+	char* buf = get_named_address(cpu->eip + offset + 2);
+
+	snprintf(disassemble_buf, 32, "js %s", buf);
 
 	return disassemble_buf;
 }
@@ -317,7 +400,9 @@ int short_jns(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
 const char* short_jns_disassemble(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
 	char offset = (char)(bytes[1]);
 
-	snprintf(disassemble_buf, 32, "jns 0x%x", cpu->eip + (char)offset + 2);
+	char* buf = get_named_address(cpu->eip + offset + 2);
+
+	snprintf(disassemble_buf, 32, "jns %s", buf);
 
 	return disassemble_buf;
 }
@@ -344,7 +429,9 @@ int short_jp(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
 const char* short_jp_disassemble(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
 	char offset = (char)(bytes[1]);
 
-	snprintf(disassemble_buf, 32, "jp %u", cpu->eip + offset);
+	char* buf = get_named_address(cpu->eip + offset + 2);
+
+	snprintf(disassemble_buf, 32, "jp %s", buf);
 
 	return disassemble_buf;
 }
@@ -371,7 +458,9 @@ int short_jnp(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
 const char* short_jnp_disassemble(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
 	char offset = (char)(bytes[1]);
 
-	snprintf(disassemble_buf, 32, "jnp %u", cpu->eip + offset);
+	char* buf = get_named_address(cpu->eip + offset + 2);
+
+	snprintf(disassemble_buf, 32, "jnp %s", buf);
 
 	return disassemble_buf;
 }
@@ -398,7 +487,9 @@ int short_jl(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
 const char* short_jl_disassemble(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
 	char offset = (char)(bytes[1]);
 
-	snprintf(disassemble_buf, 32, "jl %u", cpu->eip + offset);
+	char* buf = get_named_address(cpu->eip + offset + 2);
+
+	snprintf(disassemble_buf, 32, "jl %s", buf);
 
 	return disassemble_buf;
 }
@@ -425,7 +516,9 @@ int short_jge(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
 const char* short_jge_disassemble(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
 	char offset = (char)(bytes[1]);
 
-	snprintf(disassemble_buf, 32, "jge %u", cpu->eip + offset);
+	char* buf = get_named_address(cpu->eip + offset + 2);
+
+	snprintf(disassemble_buf, 32, "jge %s", buf);
 
 	return disassemble_buf;
 }
@@ -452,7 +545,9 @@ int short_jle(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
 const char* short_jle_disassemble(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
 	char offset = (char)(bytes[1]);
 
-	snprintf(disassemble_buf, 32, "jle %u", cpu->eip + offset);
+	char* buf = get_named_address(cpu->eip + offset + 2);
+
+	snprintf(disassemble_buf, 32, "jle %s", buf);
 
 	return disassemble_buf;
 }
@@ -479,7 +574,9 @@ int short_jg(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
 const char* short_jg_disassemble(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
 	char offset = (char)(bytes[1]);
 
-	snprintf(disassemble_buf, 32, "jg %u", cpu->eip + offset);
+	char* buf = get_named_address(cpu->eip + offset + 2);
+
+	snprintf(disassemble_buf, 32, "jg %s", buf);
 
 	return disassemble_buf;
 }
@@ -501,12 +598,12 @@ int call_n(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
 	cpu->esp -= 4;
 
 	if (cpu->call_stack) {
+		cpu->call_stack_end -= 4;
+
 		cpu->call_stack_end[0] = (cpu->eip >> 0) & 0xff;
 		cpu->call_stack_end[1] = (cpu->eip >> 8) & 0xff;
 		cpu->call_stack_end[2] = (cpu->eip >> 16) & 0xff;
 		cpu->call_stack_end[3] = (cpu->eip >> 24) & 0xff;
-
-		cpu->call_stack_end -= 4;
 
 		if (cpu->call_stack_end <= cpu->call_stack) {
 			size_t new_size = align_up(cpu->call_stack_size + cpu->call_stack - cpu->call_stack_end, CALL_STACK_SIZE_STEP);
@@ -529,7 +626,11 @@ int call_n(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
 const char* call_n_disassemble(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
 	int32 number = *(const int32*)(const void*)(bytes + 1);
 
-	snprintf(disassemble_buf, 32, "call 0x%x", cpu->eip + number + 5);
+	char* buf = get_named_address(cpu->eip + number + 5);
+
+	snprintf(disassemble_buf, 32, "call %s", buf);
+
+	free(buf);
 
 	return disassemble_buf;
 }
@@ -593,7 +694,17 @@ int ret(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
 }
 
 const char* ret_disassemble(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
-	return "ret";
+	uint32 value = 0;
+
+	read_dword(cpu, cpu->esp, &value);
+
+	char* buf = get_named_address(value);
+
+	snprintf(disassemble_buf, 32, "ret %s", buf);
+
+	free(buf);
+
+	return disassemble_buf;
 }
 
 /* two bytes instructions */
@@ -733,9 +844,50 @@ int read_dword(cpu_t* cpu, uint32 addr, uint32* value) {
 	return err;
 }
 
+uint32 read_register(cpu_t* cpu, register_e reg, int* bits) {
+	if (reg >= REGISTER_EAX && reg <= REGISTER_EFLAGS) {
+		if (bits) *bits = 32;
+
+		return cpu->registers[reg];
+	}
+
+	if (reg >= REGISTER_AX && reg <= REGISTER_IP) {
+		if (bits) *bits = 16;
+
+		return cpu->ext_regs[reg - REGISTER_AX].l;
+	}
+
+	if (reg >= REGISTER_AL && reg <= REGISTER_BL) {
+		if (bits) *bits = 8;
+
+		return cpu->ext_regs[reg - REGISTER_AL].ll;
+	}
+
+	if (reg >= REGISTER_AH && reg <= REGISTER_BH) {
+		if (bits) *bits = 8;
+
+		return cpu->ext_regs[reg - REGISTER_AH].lh;
+	}
+	
+	if (bits) *bits = 0;
+
+	return 0;
+}
+
+void cpu_dump_reg(cpu_t* cpu, register_e reg) {
+	int bits = 0;
+
+	uint32 value = read_register(cpu, reg, &bits);
+
+	int hex_len = bits / 4;
+	int decimal_len = align_down((bits * 10), 3) / 30;
+
+	printf("    %-12s = 0x%.*x " SEPERATOR " %*u " SEPERATOR " 0b%.*b\n\r", registers_name[reg], hex_len, value, decimal_len, value, bits, value);
+}
+
 void cpu_dump(cpu_t* cpu) {
 	for (size_t i = 0; i < REGISTERS_CNT; i++) {
-		printf("    %-12s = 0x%.8x " SEPERATOR " %10u " SEPERATOR " 0b%.32b\n\r", registers_name[i], cpu->registers[i], cpu->registers[i], cpu->registers[i]);
+		cpu_dump_reg(cpu, i);
 	}
 
 	printf("executed/disassembled/debuged %llu instructions " SEPERATOR " cpu clock (tsc) = %llu\n\r", cpu->executed_insts, cpu->clock);
@@ -749,9 +901,9 @@ void stack_dump(cpu_t* cpu) {
 
 	else {
 		for (uint32 i = cpu->esp; i <= cpu->ebp; i += 4) {
-			uint32 val = 	(cpu->ram[i + 0] << 0) | 
-							(cpu->ram[i + 1] << 8) | 
-							(cpu->ram[i + 2] << 16) | 
+			uint32 val = 	(cpu->ram[i + 0] << 0) |
+							(cpu->ram[i + 1] << 8) |
+							(cpu->ram[i + 2] << 16)|
 							(cpu->ram[i + 3] << 24);
 
 			printf("    [%.8x] = 0x%.9x " SEPERATOR " %.10u " SEPERATOR " 0b%.32b\n", i, val, val, val);

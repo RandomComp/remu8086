@@ -29,13 +29,9 @@ ssize_t is_mov_eax_mem_n(cpu_t* cpu, const byte* bytes, size_t max_bytes);
 int mov_eax_mem_n(cpu_t* cpu, const byte* bytes, size_t max_bytes);
 const char* mov_eax_mem_n_disassemble(cpu_t* cpu, const byte* bytes, size_t max_bytes);
 
-ssize_t is_mov_r_mem_n(cpu_t* cpu, const byte* bytes, size_t max_bytes);
-int mov_r_mem_n(cpu_t* cpu, const byte* bytes, size_t max_bytes);
-const char* mov_r_mem_n_disassemble(cpu_t* cpu, const byte* bytes, size_t max_bytes);
-
-ssize_t is_mov_r_mem_r(cpu_t* cpu, const byte* bytes, size_t max_bytes);
-int mov_r_mem_r(cpu_t* cpu, const byte* bytes, size_t max_bytes);
-const char* mov_r_mem_r_disassemble(cpu_t* cpu, const byte* bytes, size_t max_bytes);
+ssize_t is_mov_r_modrn(cpu_t* cpu, const byte* bytes, size_t max_bytes);
+int mov_r_modrn(cpu_t* cpu, const byte* bytes, size_t max_bytes);
+const char* mov_r_modrn_disassemble(cpu_t* cpu, const byte* bytes, size_t max_bytes);
 
 ssize_t is_lea_r_mem_r_offset(cpu_t* cpu, const byte* bytes, size_t max_bytes);
 int lea_r_mem_r_offset(cpu_t* cpu, const byte* bytes, size_t max_bytes);

@@ -1,4 +1,5 @@
 #include <errno.h>
+#include <locale.h>
 #include <stdio.h>
 
 #include <stddef.h>
@@ -14,6 +15,42 @@
 
 #include "debugger.h"
 
+void print_pretty_dis(uint64 eip, ssize_t real_bytes, ssize_t bytes_cnt, const char* disassembled, cpu_t* cpu) {
+	printf("[0x%.8llx]", eip);
+
+	for (size_t i = 0; i < 7; i++) {
+		printf(" ");
+	}
+
+	if (real_bytes > 0) {
+		printf("0x");
+	}
+
+	else printf("  ");
+	
+	for (ssize_t i = 0; i < MAX(0, real_bytes); i++) {
+		printf("%.2x", cpu->ram[eip + i]);
+	}
+
+	if ((real_bytes * 2) < 15) {
+		for (ssize_t i = 0; i < (15 - (real_bytes * 2) + 2); i++) {
+			printf(" ");
+		}
+	}
+
+	printf("(%zi)", real_bytes);
+
+	for (size_t i = 0; i < 5; i++) {
+		printf(" ");
+	}
+
+	printf(SEPERATOR " ");
+
+	printf("%s %*s\n\r", disassembled, (int)(30 - strlen(disassembled)), SEPERATOR);
+}
+
+extern debugger_sym_map_t* root;
+
 int execute_inst(const char* exec_name, cpu_t* cpu, bool quite, bool force, bool only_disassembling, ssize_t _program_end, bool* show_remaining_opcodes_if_invalid) {
 	ssize_t real_bytes = 0;
 
@@ -24,7 +61,7 @@ int execute_inst(const char* exec_name, cpu_t* cpu, bool quite, bool force, bool
 
 	instruction_t instruction = { 0 };
 
-	ssize_t program_end = 0;
+	ssize_t program_end = _program_end;
 
 	if (_program_end < 0) {
 		program_end = 256;
@@ -96,37 +133,31 @@ int execute_inst(const char* exec_name, cpu_t* cpu, bool quite, bool force, bool
 		}
 	}
 
-	printf("[0x%.8x]", st_eip);
+	if (root && address_in_map(root, st_eip)) {
+		debugger_sym_map_t* symbol = get_symbol_by_address(root, st_eip);
 
-	for (size_t i = 0; i < 7; i++) {
-		printf(" ");
+		char* sym_buf = map_str_symbol(symbol, st_eip, true);
+
+		size_t buf_len = snprintf(nullptr, 0, "%s:", sym_buf) + 1;
+
+		char* buf = malloc(buf_len);
+
+		snprintf(buf, buf_len, "%s:", sym_buf);
+
+		free(sym_buf);
+
+		print_pretty_dis(st_eip, 0, 0, buf, cpu);
+
+		print_pretty_dis(st_eip, 0, 0, "", cpu);
+
+		free(buf);
 	}
-
-	printf("0x");
-	
-	for (ssize_t i = 0; i < MAX(0, real_bytes); i++) {
-		printf("%.2x", cpu->ram[st_eip + i]);
-	}
-
-	if ((real_bytes * 2) < 15) {
-		for (ssize_t i = 0; i < (15 - (real_bytes * 2) + 2); i++) {
-			printf(" ");
-		}
-	}
-
-	printf("(%zi)", real_bytes);
-
-	for (size_t i = 0; i < 5; i++) {
-		printf(" ");
-	}
-
-	printf(SEPERATOR " ");
 
 	ssize_t prefix_bytes = real_bytes - bytes_cnt;
 		
 	const char* disassembled = instruction.disassemble(cpu, cpu->ram + cpu->eip + prefix_bytes, program_end - cpu->eip - prefix_bytes);
 
-	printf("%s %*s\n\r", disassembled, (int)(30 - strlen(disassembled)), SEPERATOR);
+	print_pretty_dis(st_eip, real_bytes, bytes_cnt, disassembled, cpu);
 
 	if (!only_disassembling) {
 		int err = instruction.handler(cpu, cpu->ram + cpu->eip, program_end - cpu->eip);
@@ -190,6 +221,8 @@ void main_loop(const char* exec_name, size_t program_start, size_t program_size,
 }
 
 int main(int argc, char* argv[]) {
+	setlocale(LC_ALL, "");
+
 	bool only_disassembling = false, force = false, quite = false, interactive = false;
 
 	int last = -1;
@@ -320,9 +353,11 @@ int main(int argc, char* argv[]) {
 	// 	printf("    [%.8x] = 0x%.2x\n", 0xB8000 + i, val);
 	// }
 
-	free(cpu->ram);
+	free(cpu->ram); cpu->ram = nullptr;
 
-	free(cpu);
+	free(cpu->call_stack); cpu->call_stack = nullptr;
+
+	free(cpu); cpu = nullptr;
 
 	return 0;
 }

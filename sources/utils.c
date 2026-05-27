@@ -49,6 +49,8 @@ char* parse_cli_args(char* _str) {
 		
 		return nullptr;
 	}
+	
+	strtok_index = 0;
 
 	str_len = strlen(_str);
 
@@ -166,6 +168,10 @@ unsigned int tohex(char c) {
 
 void parse_bytes(const char* str, byte* _bytes, size_t* _bytes_cnt, const char** end_ptr) {
 	size_t bytes_cnt = 0;
+
+	if (strncmp(str, "0x", 2) == 0) {
+		str += 2;
+	}
 
 	while (ishex(str[0]) && ishex(str[1])) {
 		byte value = (tohex(str[0]) << 4) | tohex(str[1]);

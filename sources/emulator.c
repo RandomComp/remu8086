@@ -9,13 +9,9 @@
 ssize_t remu_decode_instruction(instruction_t* result, cpu_t* cpu, const byte* bytes, size_t max_bytes, ssize_t* _bytes_cnt) {
 	size_t real_bytes = 0; ssize_t bytes_cnt = -1;
 
-	instruction_t instruction = { 0 };
-
 	bool prefix_ok = (bytes[real_bytes] == 0x66 || bytes[real_bytes] == 0x67 || bytes[real_bytes] == 0x0F);
 
 	const instruction_t* instructions = one_bytes_instructions;
-
-	size_t instructions_cnt = one_bytes_instructions_cnt;
 
 	while (prefix_ok) {
 		if (bytes[real_bytes] == 0x66) {
@@ -31,7 +27,7 @@ ssize_t remu_decode_instruction(instruction_t* result, cpu_t* cpu, const byte* b
 		}
 
 		if (bytes[real_bytes] == 0x0F) {
-			instructions = two_bytes_instructions; instructions_cnt = two_bytes_instructions_cnt;
+			instructions = two_bytes_instructions;
 
 			real_bytes++;
 		}
@@ -39,50 +35,30 @@ ssize_t remu_decode_instruction(instruction_t* result, cpu_t* cpu, const byte* b
 		prefix_ok = (bytes[real_bytes] == 0x66 || bytes[real_bytes] == 0x67 || bytes[real_bytes] == 0x0F);
 	}
 
-	for (size_t i = 0; i < instructions_cnt; i++) {
-		if (instructions[i].inst_mask == INSTRUCTION_MASK_EQUAL && bytes[real_bytes] != instructions[i].inst) {
-			continue;
-		}
+	byte opcode = bytes[real_bytes];
 
-		if (instructions[i].inst_mask == INSTRUCTION_MASK_AND && (bytes[real_bytes] & instructions[i].inst) != instructions[i].inst) {
-			continue;
-		}
+	instruction_t instruction = instructions[opcode];
 
-		group_t group = instructions[i].group;
+	if (bytes[real_bytes] != opcode) {
+		return -1;
+	}
 
-		instruction_t inst = { 0 };
+	group_t group = instruction.group;
 
-		if (group.insts) {
-			for (size_t j = 0; j < 8; j++) {
-				if (!group.insts || !group.insts->handler || !group.insts->is || !group.insts->disassemble) continue;
+	if (group.insts) {
+		modrm_t mod = *(const modrm_t*)(bytes + real_bytes + 1);
 
-				modrm_t mod = *(const modrm_t*)(bytes + real_bytes + 1);
+		instruction = group.insts[mod.reg];
 
-				if (group.insts->inst_mask != INSTRUCTION_MASK_EQUAL) continue;
+		real_bytes += 1;
+	}
 
-				if (group.insts->inst == mod.reg) {
-					inst = group.insts[j];
+	if (!instruction.handler || !instruction.is || !instruction.disassemble) return -1;
 
-					real_bytes += 1;
+	bytes_cnt = instruction.is(cpu, bytes + real_bytes, max_bytes - real_bytes);
 
-					break;
-				}
-			}
-		}
-
-		else inst = instructions[i];
-
-		if (!inst.handler || !inst.is || !inst.disassemble) continue;
-
-		bytes_cnt = inst.is(cpu, bytes + real_bytes, max_bytes - real_bytes);
-
-		if (bytes_cnt > 0) {
-			instruction = inst;
-
-			real_bytes += bytes_cnt;
-
-			break;
-		}
+	if (bytes_cnt > 0) {
+		real_bytes += bytes_cnt;
 	}
 
 	if (bytes_cnt == -1) {

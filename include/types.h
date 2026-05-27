@@ -14,6 +14,9 @@ typedef _Bool bool;
 
 #define UNUSED __attribute__((unused))
 
+#define ALLOC __attribute__((malloc))
+#define FREE __attribute__((free))
+
 #if (defined(_WIN32) || defined(_WIN64)) || (defined(__MINGW32__) || defined(__MINGW64__))
 #define IS_WIN 
 #elif (defined(__linux__) || defined(__APPLE__) || defined(__unix__) || defined(__unix) || defined(__FreeBSD__) || defined(__ANDROID__))

@@ -23,7 +23,7 @@ void kmain(uint32 x) {
 
 	asm volatile("vmcall");
 
-	i *= some_function(i, 0);
+	// i *= some_function(i, 0);
 }
 
 // void print_str(byte style, const char* str) {

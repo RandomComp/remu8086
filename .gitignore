@@ -8,9 +8,12 @@ remu80386_win_x86.exe
 remu80386_linux_x86
 remu80386_android_aarch64
 remu80386_linux_aarch64
+vmlinux
+System.map
+System.nmmap
+script.py
 *.exe
 *.o
 *.bin
 repo_pushing_token
 .fuse_*
-old_show_info

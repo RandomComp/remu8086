@@ -1,0 +1,8 @@
+00100000 T entry
+00100020 T some_function
+00100051 T kmain
+00101000 B __bss_start
+00101000 B _edata
+00101000 b stack_bottom
+00102000 B _end
+00102000 b stack_top

@@ -193,7 +193,7 @@ const char* mov_byte_modrn_disassemble(cpu_t* cpu, const byte* bytes, size_t max
 	modrm_t mod = *(const modrm_t*)(bytes + 1);
 
 	if (mod.mod == 0b11) {
-		snprintf(disassemble_buf, 32, "mov %s, %s", registers_name[REGISTER_AL + mod.reg], registers_name[REGISTER_AL + mod.reg_or_mem]);
+		snprintf(disassemble_buf, 32, "mov %s, %s", registers_name[REGISTER_AL + mod.reg_or_mem], registers_name[REGISTER_AL + mod.reg]);
 
 		return disassemble_buf;
 	}
@@ -208,13 +208,13 @@ const char* mov_byte_modrn_disassemble(cpu_t* cpu, const byte* bytes, size_t max
 
 	else if (mod.mod == 0b01) {
 		if (mod.reg_or_mem == 0b100) {
-			snprintf(disassemble_buf, 32, "mov byte [%s], %s", sib_disassemble(mod.mod, cpu, bytes + 2, max_bytes - 2), registers_name[REGISTER_AL + mod.reg]);
+			snprintf(disassemble_buf, 32, "mov %s, byte [%s]", registers_name[REGISTER_AL + mod.reg], sib_disassemble(mod.mod, cpu, bytes + 2, max_bytes - 2));
 		}
 
 		else {
 			int offset = convert_byte_to_int(bytes[2]);
 
-			snprintf(disassemble_buf, 32, "mov byte [%s%+i], %s", registers_name[mod.reg_or_mem], offset, registers_name[REGISTER_AL + mod.reg]);
+			snprintf(disassemble_buf, 32, "mov %s, byte [%s%+i]", registers_name[REGISTER_AL + mod.reg], registers_name[mod.reg_or_mem], offset);
 		}
 
 		return disassemble_buf;
@@ -664,47 +664,6 @@ const char* mov_eax_mem_n_disassemble(cpu_t* cpu, const byte* bytes, size_t max_
 	return disassemble_buf;
 }
 
-ssize_t is_mov_r_mem_n(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
-	if (bytes[0] == 0x8b &&
-		bytes[1] < 0x3d) {
-		return 6;
-	}
-
-	return -1;
-}
-
-int mov_r_mem_n(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
-	register_e reg = (bytes[1] >> 3) & 0b00000111;
-
-	uint32 number = 0;
-	
-	if (cpu->cur_address_mode == CPU_MODE_16_BITS) {
-		number = 	((uint32)bytes[2] << 0) | 
-					((uint32)bytes[3] << 8);
-	}
-	
-	else if (cpu->cur_address_mode == CPU_MODE_32_BITS) {
-		number = 	((uint32)bytes[2] << 0) | 
-					((uint32)bytes[3] << 8) | 
-					((uint32)bytes[4] << 16)| 
-					((uint32)bytes[5] << 24);
-	}
-
-	cpu->registers[reg] = 0;
-
-	return read_dword(cpu, number, &cpu->registers[reg]);
-}
-
-const char* mov_r_mem_n_disassemble(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
-	register_e reg = (bytes[1] >> 3) & 0b00000111;
-
-	uint32 number = *(const uint32*)(const void*)(bytes + 2);
-	
-	snprintf(disassemble_buf, 32, "mov %s, dword [%u]", registers_name[reg], number);
-
-	return disassemble_buf;
-}
-
 size_t parse_sib(int32* addr, byte mod, cpu_t* cpu, const byte* bytes, size_t max_bytes) {
 	if (max_bytes == 0) return -1;
 
@@ -787,7 +746,7 @@ const char* sib_disassemble(byte mod, cpu_t* cpu, const byte* bytes, size_t max_
 	return sib_buf;
 }
 
-ssize_t is_mov_r_mem_r(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
+ssize_t is_mov_r_modrn(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
 	if (bytes[0] != 0x8b) return -1;
 
 	modrm_t mod = *(const modrm_t*)(bytes + 1);
@@ -810,7 +769,7 @@ ssize_t is_mov_r_mem_r(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
 	return -1;
 }
 
-int mov_r_mem_r(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
+int mov_r_modrn(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
 	modrm_t mod = *(const modrm_t*)(bytes + 1);
 
 	int32 base = 0;
@@ -877,7 +836,7 @@ int mov_r_mem_r(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
 	return 0;
 }
 
-const char* mov_r_mem_r_disassemble(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
+const char* mov_r_modrn_disassemble(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
 	modrm_t mod = *(const modrm_t*)(bytes + 1);
 
 	if (mod.mod != 0b11 &&
