@@ -9,6 +9,8 @@
 
 typedef struct debugger_state {
 	cpu_t* cpu; uint32 program_start, program_end;
+
+	bool minimal, force;
 } debugger_state;
 
 typedef struct debugger_cmd {
@@ -28,8 +30,22 @@ struct debugger_sym_map_t {
 
 	debugger_sym_map_t** syms; size_t syms_cnt; size_t syms_size;
 
+	bool is_private;
+
 	bool map_freed;
+
+	debugger_symbol_type_e type;
 };
+
+typedef struct debugger_variable_t {
+	char* name; char* value;
+} debugger_variable_t;
+
+#define DEBUGGER_VARIABLES_ALLOC_STEP 4
+
+extern debugger_symbol_type_e c_to_symbol_type[];
+
+extern const char* symbol_type_to_readable[];
 
 debugger_sym_map_t* load_ldmap_from_file(const char* exec_name, const char* filename);
 debugger_sym_map_t* load_nmmap_from_file(const char* exec_name, const char* filename);
@@ -39,9 +55,10 @@ debugger_sym_map_t* map_realloc(debugger_sym_map_t* map, const char* name, size_
 debugger_sym_map_t* sym_realloc(debugger_sym_map_t* sym, const char* name);
 void map_show(debugger_sym_map_t* map, size_t tab_level);
 char* map_str_symbol(debugger_sym_map_t* map, uint64 address, bool _short);
-bool address_in_map(debugger_sym_map_t* map, uint64 address);
-bool name_in_map(debugger_sym_map_t* map, const char* name);
-debugger_sym_map_t* get_symbol_by_address(debugger_sym_map_t* map, uint64 address);
+bool address_in_map(debugger_sym_map_t* map, debugger_symbol_type_e type, uint64 address);
+bool name_in_map(debugger_sym_map_t* map, debugger_symbol_type_e type, const char* name);
+debugger_sym_map_t* get_symbol_by_name(debugger_sym_map_t* map, int need_private, debugger_symbol_type_e type, const char* name);
+debugger_sym_map_t* get_symbol_by_address(debugger_sym_map_t* map, int need_private, debugger_symbol_type_e type, uint64 address);
 void _map_free(debugger_sym_map_t* map, const char* file, unsigned int line);
 
 #define map_free(map) (_map_free(map, __FILE__, __LINE__))
@@ -78,6 +95,14 @@ int debugger_sf(debugger_state* state, const char** argv, size_t argc);
 
 int debugger_sh(debugger_state* state, const char** argv, size_t argc);
 
-void debug_loop(const char* exec_name, size_t program_start, size_t program_size, cpu_t* cpu);
+debugger_variable_t* get_var_by_name(const char* name);
+int set_var(const char* name, const char* value);
+char* get_var(const char* name);
+void realloc_vars(size_t size);
+void free_vars(void);
+
+int execute_debugger_command(debugger_state* state, const char** argv, size_t argc);
+
+void debug_loop(const char* exec_name, size_t program_start, size_t program_size, cpu_t* cpu, bool minimal, bool force);
 
 #endif

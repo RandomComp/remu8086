@@ -7,34 +7,6 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "debugger.h"
-
-debugger_sym_map_t* root = nullptr;
-
-bool is_valid_instruction(instruction_t inst) {
-	return inst.is && inst.handler && inst.disassemble && inst.mnemonic && inst.operands;
-}
-
-bool is_valid_group(instruction_t inst) {
-	return inst.mnemonic && inst.operands && inst.group.insts;
-}
-
-char* get_named_address(uint64 address) {
-	debugger_sym_map_t* symbol = get_symbol_by_address(root, address);
-
-	if (!root || !symbol) {
-		size_t result_size = snprintf(nullptr, 0, "0x%llx", address) + 1;
-
-		char* result = malloc(result_size);
-
-		snprintf(result, result_size, "0x%llx", address);
-
-		return result;
-	}
-
-	return map_str_symbol(symbol, address, true);
-}
-
 ssize_t is_nop(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
 	if (bytes[0] == 0x90) {
 		return 1;
@@ -76,7 +48,7 @@ int short_jmp(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
 const char* short_jmp_disassemble(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
 	char offset = (char)(bytes[1]);
 
-	char* buf = get_named_address(cpu->pc + offset + 2);
+	char* buf = get_named_address(cpu->no_approx_addr, DEBUGGER_SYMBOL_TYPE_FUNCTION, cpu->pc + offset + 2);
 
 	snprintf(disassemble_buf, 32, "jmp %s", buf);
 
@@ -105,7 +77,7 @@ int short_jo(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
 const char* short_jo_disassemble(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
 	char offset = (char)(bytes[1]);
 
-	char* buf = get_named_address(cpu->pc + offset + 2);
+	char* buf = get_named_address(cpu->no_approx_addr, DEBUGGER_SYMBOL_TYPE_FUNCTION, cpu->pc + offset + 2);
 
 	snprintf(disassemble_buf, 32, "jo %s", buf);
 
@@ -134,7 +106,7 @@ int short_jno(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
 const char* short_jno_disassemble(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
 	char offset = (char)(bytes[1]);
 
-	char* buf = get_named_address(cpu->pc + offset + 2);
+	char* buf = get_named_address(cpu->no_approx_addr, DEBUGGER_SYMBOL_TYPE_FUNCTION, cpu->pc + offset + 2);
 
 	snprintf(disassemble_buf, 32, "jno %s", buf);
 
@@ -163,7 +135,7 @@ int short_jc(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
 const char* short_jc_disassemble(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
 	char offset = (char)(bytes[1]);
 
-	char* buf = get_named_address(cpu->pc + offset + 2);
+	char* buf = get_named_address(cpu->no_approx_addr, DEBUGGER_SYMBOL_TYPE_FUNCTION, cpu->pc + offset + 2);
 
 	snprintf(disassemble_buf, 32, "jc %s", buf);
 
@@ -192,7 +164,7 @@ int short_jnc(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
 const char* short_jnc_disassemble(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
 	char offset = (char)(bytes[1]);
 
-	char* buf = get_named_address(cpu->pc + offset + 2);
+	char* buf = get_named_address(cpu->no_approx_addr, DEBUGGER_SYMBOL_TYPE_FUNCTION, cpu->pc + offset + 2);
 
 	snprintf(disassemble_buf, 32, "jnc %s", buf);
 
@@ -221,7 +193,7 @@ int short_jz(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
 const char* short_jz_disassemble(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
 	char offset = (char)(bytes[1]);
 
-	char* buf = get_named_address(cpu->pc + offset + 2);
+	char* buf = get_named_address(cpu->no_approx_addr, DEBUGGER_SYMBOL_TYPE_FUNCTION, cpu->pc + offset + 2);
 
 	snprintf(disassemble_buf, 32, "jz %s", buf);
 
@@ -250,7 +222,7 @@ int short_jnz(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
 const char* short_jnz_disassemble(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
 	char offset = (char)(bytes[1]);
 
-	char* buf = get_named_address(cpu->pc + offset + 2);
+	char* buf = get_named_address(cpu->no_approx_addr, DEBUGGER_SYMBOL_TYPE_FUNCTION, cpu->pc + offset + 2);
 
 	snprintf(disassemble_buf, 32, "jnz %s", buf);
 
@@ -279,7 +251,7 @@ int short_jcz(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
 const char* short_jcz_disassemble(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
 	char offset = (char)(bytes[1]);
 
-	char* buf = get_named_address(cpu->pc + offset + 2);
+	char* buf = get_named_address(cpu->no_approx_addr, DEBUGGER_SYMBOL_TYPE_FUNCTION, cpu->pc + offset + 2);
 
 	snprintf(disassemble_buf, 32, "jcz %s", buf);
 
@@ -308,7 +280,7 @@ int short_jncz(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
 const char* short_jncz_disassemble(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
 	char offset = (char)(bytes[1]);
 
-	char* buf = get_named_address(cpu->pc + offset + 2);
+	char* buf = get_named_address(cpu->no_approx_addr, DEBUGGER_SYMBOL_TYPE_FUNCTION, cpu->pc + offset + 2);
 
 	snprintf(disassemble_buf, 32, "jncz %s", buf);
 
@@ -337,7 +309,7 @@ int short_js(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
 const char* short_js_disassemble(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
 	char offset = (char)(bytes[1]);
 
-	char* buf = get_named_address(cpu->pc + offset + 2);
+	char* buf = get_named_address(cpu->no_approx_addr, DEBUGGER_SYMBOL_TYPE_FUNCTION, cpu->pc + offset + 2);
 
 	snprintf(disassemble_buf, 32, "js %s", buf);
 
@@ -366,7 +338,7 @@ int short_jns(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
 const char* short_jns_disassemble(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
 	char offset = (char)(bytes[1]);
 
-	char* buf = get_named_address(cpu->pc + offset + 2);
+	char* buf = get_named_address(cpu->no_approx_addr, DEBUGGER_SYMBOL_TYPE_FUNCTION, cpu->pc + offset + 2);
 
 	snprintf(disassemble_buf, 32, "jns %s", buf);
 
@@ -395,7 +367,7 @@ int short_jp(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
 const char* short_jp_disassemble(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
 	char offset = (char)(bytes[1]);
 
-	char* buf = get_named_address(cpu->pc + offset + 2);
+	char* buf = get_named_address(cpu->no_approx_addr, DEBUGGER_SYMBOL_TYPE_FUNCTION, cpu->pc + offset + 2);
 
 	snprintf(disassemble_buf, 32, "jp %s", buf);
 
@@ -424,7 +396,7 @@ int short_jnp(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
 const char* short_jnp_disassemble(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
 	char offset = (char)(bytes[1]);
 
-	char* buf = get_named_address(cpu->pc + offset + 2);
+	char* buf = get_named_address(cpu->no_approx_addr, DEBUGGER_SYMBOL_TYPE_FUNCTION, cpu->pc + offset + 2);
 
 	snprintf(disassemble_buf, 32, "jnp %s", buf);
 
@@ -453,7 +425,7 @@ int short_jl(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
 const char* short_jl_disassemble(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
 	char offset = (char)(bytes[1]);
 
-	char* buf = get_named_address(cpu->pc + offset + 2);
+	char* buf = get_named_address(cpu->no_approx_addr, DEBUGGER_SYMBOL_TYPE_FUNCTION, cpu->pc + offset + 2);
 
 	snprintf(disassemble_buf, 32, "jl %s", buf);
 
@@ -482,7 +454,7 @@ int short_jge(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
 const char* short_jge_disassemble(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
 	char offset = (char)(bytes[1]);
 
-	char* buf = get_named_address(cpu->pc + offset + 2);
+	char* buf = get_named_address(cpu->no_approx_addr, DEBUGGER_SYMBOL_TYPE_FUNCTION, cpu->pc + offset + 2);
 
 	snprintf(disassemble_buf, 32, "jge %s", buf);
 
@@ -511,7 +483,7 @@ int short_jle(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
 const char* short_jle_disassemble(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
 	char offset = (char)(bytes[1]);
 
-	char* buf = get_named_address(cpu->pc + offset + 2);
+	char* buf = get_named_address(cpu->no_approx_addr, DEBUGGER_SYMBOL_TYPE_FUNCTION, cpu->pc + offset + 2);
 
 	snprintf(disassemble_buf, 32, "jle %s", buf);
 
@@ -540,7 +512,7 @@ int short_jg(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
 const char* short_jg_disassemble(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
 	char offset = (char)(bytes[1]);
 
-	char* buf = get_named_address(cpu->pc + offset + 2);
+	char* buf = get_named_address(cpu->no_approx_addr, DEBUGGER_SYMBOL_TYPE_FUNCTION, cpu->pc + offset + 2);
 
 	snprintf(disassemble_buf, 32, "jg %s", buf);
 
@@ -592,7 +564,7 @@ int call_n(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
 const char* call_n_disassemble(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
 	int32 number = *(const int32*)(const void*)(bytes + 1);
 
-	char* buf = get_named_address(cpu->pc + number + 5);
+	char* buf = get_named_address(cpu->no_approx_addr, DEBUGGER_SYMBOL_TYPE_FUNCTION, cpu->pc + number + 5);
 
 	snprintf(disassemble_buf, 32, "call %s", buf);
 
@@ -660,11 +632,13 @@ int ret(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
 }
 
 const char* ret_disassemble(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
+	if (!cpu->named_ret) return "ret";
+
 	uint32 value = 0;
 
 	read_dword(cpu, cpu->stack, &value);
 
-	char* buf = get_named_address(value);
+	char* buf = get_named_address(cpu->no_approx_addr, DEBUGGER_SYMBOL_TYPE_FUNCTION, value);
 
 	snprintf(disassemble_buf, 32, "ret %s", buf);
 

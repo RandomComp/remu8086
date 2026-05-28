@@ -9,7 +9,7 @@
 
 int64 align_up(int64 num, int64 align) {
 	if (align == 0 || num % align == 0)
-		return num; 
+		return num;
 
 	return ((num / align) + 1) * align;
 }

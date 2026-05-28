@@ -14,8 +14,15 @@
 #include "emulator.h"
 
 #include "debugger.h"
+#include "utils.h"
 
-void print_pretty_dis(uint64 pc, ssize_t real_bytes, ssize_t bytes_cnt, const char* disassembled, cpu_t* cpu) {
+void print_pretty_dis(uint64 pc, ssize_t real_bytes, ssize_t bytes_cnt, byte* bytes, bool minimal, const char* disassembled) {
+	if (minimal) {
+		printf("%s\n\r", disassembled);
+
+		return;
+	}
+	
 	printf("[0x%.8llx]", pc);
 
 	for (size_t i = 0; i < 7; i++) {
@@ -29,7 +36,7 @@ void print_pretty_dis(uint64 pc, ssize_t real_bytes, ssize_t bytes_cnt, const ch
 	else printf("  ");
 	
 	for (ssize_t i = 0; i < MAX(0, real_bytes); i++) {
-		printf("%.2x", cpu->ram[pc + i]);
+		printf("%.2x", bytes[i]);
 	}
 
 	if ((real_bytes * 2) < 15) {
@@ -51,7 +58,7 @@ void print_pretty_dis(uint64 pc, ssize_t real_bytes, ssize_t bytes_cnt, const ch
 
 extern debugger_sym_map_t* root;
 
-int execute_inst(const char* exec_name, cpu_t* cpu, bool quite, bool force, bool only_disassembling, ssize_t _program_end, bool* show_remaining_opcodes_if_invalid) {
+int execute_inst(const char* exec_name, cpu_t* cpu, bool minimal, bool force, bool only_disassembling, ssize_t _program_end, bool* show_remaining_opcodes_if_invalid) {
 	ssize_t real_bytes = 0;
 
 	uint32 st_pc = cpu->pc;
@@ -81,7 +88,7 @@ int execute_inst(const char* exec_name, cpu_t* cpu, bool quite, bool force, bool
 	real_bytes = remu_decode_instruction(&instruction, cpu, cpu->ram + cpu->pc, program_end - cpu->pc, &bytes_cnt);
 
 	if (real_bytes < 0) {
-		if (!quite) {
+		if (!force) {
 			if (show_remaining_opcodes_if_invalid) {
 				printf("Remaining opcodes: ");
 
@@ -97,44 +104,42 @@ int execute_inst(const char* exec_name, cpu_t* cpu, bool quite, bool force, bool
 		}
 
 		if (only_disassembling) {
-			if (!quite) {
-				printf("invalid opcode\n");
+			if (!force) {
+				printf("invalid opcode\n\r");
+
+				return -1;
 			}
 
-			if (force) {
+			else {
 				cpu->pc += 1;
 
 				return 0;
 			}
-
-			else return -1;
 		}
 
 		else {
-			if (!quite) {
+			if (!force) {
 				printf("invalid opcode\n");
 			
-				cpu_dump(cpu);
+				cpu_dump(minimal, cpu);
 				
 				printf("Stack dump:\n\r");
 
-				stack_dump(cpu);
+				stack_dump(minimal, cpu);
+
+				return -1;
 			}
 
-			if (force) {
+			else {
 				cpu->pc += 1;
 
 				return 0;
 			}
-
-			else return -1;
-
-			printf("%zi\n\r", real_bytes);
 		}
 	}
 
-	if (root && address_in_map(root, st_pc)) {
-		debugger_sym_map_t* symbol = get_symbol_by_address(root, st_pc);
+	if (root && address_in_map(root, DEBUGGER_SYMBOL_TYPE_ANY, st_pc)) {
+		debugger_sym_map_t* symbol = get_symbol_by_address(root, 2, DEBUGGER_SYMBOL_TYPE_ANY, st_pc);
 
 		char* sym_buf = map_str_symbol(symbol, st_pc, true);
 
@@ -146,9 +151,9 @@ int execute_inst(const char* exec_name, cpu_t* cpu, bool quite, bool force, bool
 
 		free(sym_buf);
 
-		print_pretty_dis(st_pc, 0, 0, buf, cpu);
+		print_pretty_dis(st_pc, 0, 0, cpu->ram + st_pc, minimal, buf);
 
-		print_pretty_dis(st_pc, 0, 0, "", cpu);
+		print_pretty_dis(st_pc, 0, 0, cpu->ram + st_pc, minimal, "");
 
 		free(buf);
 	}
@@ -157,7 +162,7 @@ int execute_inst(const char* exec_name, cpu_t* cpu, bool quite, bool force, bool
 		
 	const char* disassembled = instruction.disassemble(cpu, cpu->ram + cpu->pc + prefix_bytes, program_end - cpu->pc - prefix_bytes);
 
-	print_pretty_dis(st_pc, real_bytes, bytes_cnt, disassembled, cpu);
+	print_pretty_dis(st_pc, real_bytes, bytes_cnt, cpu->ram + st_pc, minimal, disassembled);
 
 	if (!only_disassembling) {
 		int err = instruction.handler(cpu, cpu->ram + cpu->pc, program_end - cpu->pc);
@@ -179,7 +184,7 @@ int execute_inst(const char* exec_name, cpu_t* cpu, bool quite, bool force, bool
 			cpu->cur_reg_mode = src_reg_mode;
 			cpu->cur_address_mode = src_address_mode;
 
-			return -1;
+			return -2;
 		}
 
 		if (err == INSTRUCTION_ERR_BREAKPOINT) {
@@ -192,7 +197,7 @@ int execute_inst(const char* exec_name, cpu_t* cpu, bool quite, bool force, bool
 
 			printf("Break\n\r");
 
-			return -1;
+			return -2;
 		}
 	}
 
@@ -208,24 +213,27 @@ int execute_inst(const char* exec_name, cpu_t* cpu, bool quite, bool force, bool
 
 #include <stdlib.h>
 
-void main_loop(const char* exec_name, size_t program_start, size_t program_size, cpu_t* cpu, bool quite, bool force, bool only_disassembling) {
+void main_loop(const char* exec_name, size_t program_start, size_t program_size, cpu_t* cpu, bool minimal, bool force, bool only_disassembling) {
 	size_t program_end = program_start + program_size;
 
 	bool show_remaining_opcodes_if_invalid = true;
 
 	while (cpu->pc >= program_start && cpu->pc <= program_end) {
-		int err = execute_inst(exec_name, cpu, quite, force, only_disassembling, program_end, &show_remaining_opcodes_if_invalid);
+		int err = execute_inst(exec_name, cpu, minimal, force, only_disassembling, program_end, &show_remaining_opcodes_if_invalid);
 
 		if (err != 0) break;
 	}
 }
 
 void show_usage(const char* exec_name) {
-	printf("Usage: %s [flags: -d -i -s -f -q -v] [binary file to execute/debug/disassemble]\n\r\n\r", exec_name);
+	printf("Usage: %s [flags: -d -i -s -c -qe -m -f -q -v] [symbol file after -s if used] [debugger command after -c if used] [binary file to execute/debug/disassemble]\n\r\n\r", exec_name);
 
 	printf("    use -d to disassemble (like r2 -b 32 -q -c \"s 0x0; pd\" or objdump -M intel -D)\n\r");
 	printf("    use -i to activate interactive/debug mode (like r2 [file or \"-\"] or gdb)\n\r");
-	printf("    use -s to load symbols file\n\r");
+	printf("    use -s to load symbols file .ldmap (of ld) or .nmmap (of nm utility)\n\r");
+	printf("    use -c to execute debugger command (like r2 -b 32 -c [command])\n\r");
+	printf("    use -qe to quiet exit after -c\n\r");
+	printf("    use -m to minimalastic output (for scripting)\n\r");
 	printf("    use -f to activate force mode (ignore errors)\n\r");
 	printf("    use -q to activate quiet mode (not showing errors)\n\r");
 	printf("    use -v to view version\n\r");
@@ -234,9 +242,14 @@ void show_usage(const char* exec_name) {
 int main(int argc, char* argv[]) {
 	setlocale(LC_ALL, "");
 
-	bool only_disassembling = false, force = false, quite = false, interactive = false, version = false;
+	bool only_disassembling = false, force = false, interactive = false, version = false;
 
 	bool need_symbol_file = false; const char* symbol_file = nullptr;
+
+	bool need_execute_command = false; char* debugger_command = nullptr;
+	bool silent_quit = false;
+
+	bool minimal = false;
 
 	int last = -1;
 
@@ -245,6 +258,14 @@ int main(int argc, char* argv[]) {
 			symbol_file = argv[i];
 
 			need_symbol_file = false;
+
+			continue;
+		}
+
+		if (need_execute_command) {
+			debugger_command = argv[i];
+
+			need_execute_command = false;
 
 			continue;
 		}
@@ -261,10 +282,6 @@ int main(int argc, char* argv[]) {
 			force = true;
 		}
 
-		else if (strcmp(argv[i], "-q") == 0) {
-			quite = true;
-		}
-
 		else if (strcmp(argv[i], "-v") == 0) {
 			version = true;
 		}
@@ -273,9 +290,27 @@ int main(int argc, char* argv[]) {
 			need_symbol_file = true;
 		}
 
+		else if (strcmp(argv[i], "-c") == 0) {
+			need_execute_command = true;
+		}
+
+		else if (strcmp(argv[i], "-qe") == 0) {
+			silent_quit = true;
+		}
+
+		else if (strcmp(argv[i], "-m") == 0) {
+			minimal = true;
+		}
+
 		else {
 			last = i; break;
 		}
+	}
+
+	if (version && minimal) {
+		printf(REMU80386_MINIMAL_INFO "\n\r", REMU80386_VER_MAJOR, REMU80386_VER_MINOR);
+
+		return 0;
 	}
 
 	if (version) {
@@ -362,7 +397,7 @@ int main(int argc, char* argv[]) {
 			root = map_realloc_syms_ptr(root, "root", DEBUGGER_SYMS_ALLOC_STEP);
 		}
 
-		if (name_in_map(root, symbol_file)) {
+		if (name_in_map(root, DEBUGGER_SYMBOL_TYPE_ANY, symbol_file)) {
 			printf("%s: file \"%s\" already loaded\n\r", argv[0], symbol_file);
 
 			return 1;
@@ -382,29 +417,86 @@ int main(int argc, char* argv[]) {
 			root = map_realloc_syms_ptr(root, root->name, DEBUGGER_SYMS_ALLOC_STEP);
 		}
 	}
+
+	// Executing debugger command
+
+	int err = 0;
+
+	if (debugger_command) {
+		debugger_state state = {
+			.cpu = cpu,
+			.program_start = program_start,
+			.program_end = program_start + program_size,
+			.minimal = minimal
+		};
+
+		char* commands = strtok(debugger_command, ";\n\r");
+
+		while (commands) {
+			if (strlen(commands) <= 0) continue;
+
+			char* command = strdup(commands);
+
+			command += strspn(command, " ");
+
+			command = parse_cli_args(command);
+
+			const char* cmd_argv[16] = { 0 }; size_t cmd_argc = 0;
+
+			while (command && cmd_argc < 16) {
+				cmd_argv[cmd_argc] = command;
+
+				command = parse_cli_args(nullptr);
+
+				cmd_argc++;
+			}
+
+			err = execute_debugger_command(&state, cmd_argv, cmd_argc);
+
+			if (err == 127) {
+				printf("%s: no such command. Try \"?\" or \"help\"\n\r", cmd_argv[0]);
+			}
+
+			else if (err == 500) {
+				return 0;
+			}
+
+			else if (err != 0) {
+				break;
+
+				free(command); command = nullptr;
+			}
+
+			free(command); command = nullptr;
+
+			commands = strtok(nullptr, ";\n\r");
+		}
+	}
 	
 	// const byte data[] = {0xe8, 0xfb, 0xff, 0xff, 0xff};
 
 	// memcpy(cpu->ram + program_start, data, 5);
 
-	if (interactive) {
-		debug_loop(argv[0], program_start, program_size, cpu);
-	}
+	if (!silent_quit) {
+		if (interactive) {
+			debug_loop(argv[0], program_start, program_size, cpu, minimal, force);
+		}
 
-	else {
-		main_loop(argv[0], program_start, program_size, cpu, quite, force, only_disassembling);
-	}
+		else {
+			main_loop(argv[0], program_start, program_size, cpu, minimal, force, only_disassembling);
+		}
 
-	if (interactive) {
-		printf("debuged %llu instructions " SEPERATOR " cpu clock (tsc) = %llu\n", cpu->executed_insts, cpu->clock);
-	}
+		if (interactive) {
+			printf("debuged %llu instructions " SEPERATOR " cpu clock (tsc) = %llu\n", cpu->executed_insts, cpu->clock);
+		}
 
-	else if (only_disassembling) {
-		printf("disassembled %llu instructions " SEPERATOR " cpu clock (tsc) = %llu\n", cpu->executed_insts, cpu->clock);
-	}
+		else if (only_disassembling) {
+			printf("disassembled %llu instructions " SEPERATOR " cpu clock (tsc) = %llu\n", cpu->executed_insts, cpu->clock);
+		}
 
-	else {
-		printf("executed %llu instructions " SEPERATOR " cpu clock (tsc) = %llu\n", cpu->executed_insts, cpu->clock);
+		else {
+			printf("executed %llu instructions " SEPERATOR " cpu clock (tsc) = %llu\n", cpu->executed_insts, cpu->clock);
+		}
 	}
 
 	// for (uint32 i = 0; i <= 80; i++) {
@@ -419,5 +511,5 @@ int main(int argc, char* argv[]) {
 
 	free(cpu); cpu = nullptr;
 
-	return 0;
+	return err;
 }

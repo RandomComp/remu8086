@@ -15,7 +15,7 @@
 LOAD program_asm.o
 LOAD program_c.o
                 [!provide]                        PROVIDE (__executable_start = SEGMENT_START ("text-segment", 0x8048000))
-                0x08048000                        . = (SEGMENT_START ("text-segment", 0x8048000) + SIZEOF_HEADERS)
+                0x080480b4                        . = (SEGMENT_START ("text-segment", 0x8048000) + SIZEOF_HEADERS)
 
 .interp
  *(.interp)
@@ -44,7 +44,7 @@ LOAD program_c.o
 .gnu.version_r
  *(.gnu.version_r)
 
-.rel.dyn
+.rel.dyn        0x080480b4        0x0
  *(.rel.init)
  *(.rel.text .rel.text.* .rel.gnu.linkonce.t.*)
  *(.rel.fini)
@@ -56,25 +56,28 @@ LOAD program_c.o
  *(.rel.ctors)
  *(.rel.dtors)
  *(.rel.got)
+ .rel.got       0x080480b4        0x0 program_asm.o
  *(.rel.bss .rel.bss.* .rel.gnu.linkonce.b.*)
  *(.rel.ifunc)
 
-.rel.plt        0x08048000        0x0
+.rel.plt        0x080480b4        0x0
  *(.rel.plt)
                 [!provide]                        PROVIDE (__rel_iplt_start = .)
  *(.rel.iplt)
+ .rel.iplt      0x080480b4        0x0 program_asm.o
                 [!provide]                        PROVIDE (__rel_iplt_end = .)
 
 .relr.dyn
  *(.relr.dyn)
-                0x08048000                        . = ALIGN (CONSTANT (MAXPAGESIZE))
+                0x08049000                        . = ALIGN (CONSTANT (MAXPAGESIZE))
 
 .init
  *(SORT_NONE(.init))
 
-.plt
+.plt            0x08049000        0x0
  *(.plt)
  *(.iplt)
+ .iplt          0x08049000        0x0 program_asm.o
 
 .plt.got
  *(.plt.got)
@@ -82,7 +85,7 @@ LOAD program_c.o
 .plt.sec
  *(.plt.sec)
 
-.text           0x00100000       0x6b
+.text           0x00100000       0x57
  *(.text.unlikely .text.*_unlikely .text.unlikely.*)
  *(.text.exit .text.exit.*)
  *(.text.startup .text.startup.*)
@@ -91,9 +94,8 @@ LOAD program_c.o
  *(.text .stub .text.* .gnu.linkonce.t.*)
  .text          0x00100000       0x20 program_asm.o
                 0x00100000                entry
- .text          0x00100020       0x4b program_c.o
-                0x00100020                some_function
-                0x00100051                kmain
+ .text          0x00100020       0x37 program_c.o
+                0x00100033                kmain
  *(.gnu.warning)
 
 .fini
@@ -198,14 +200,17 @@ LOAD program_c.o
 .dynamic
  *(.dynamic)
 
-.got
+.got            0x00101000        0x0
  *(.got)
+ .got           0x00101000        0x0 program_asm.o
  *(.igot)
                 0x00101000                        . = DATA_SEGMENT_RELRO_END (., (SIZEOF (.got.plt) >= 0xc)?0xc:0x0)
 
-.got.plt
+.got.plt        0x00101000        0x0
  *(.got.plt)
+ .got.plt       0x00101000        0x0 program_asm.o
  *(.igot.plt)
+ .igot.plt      0x00101000        0x0 program_asm.o
 
 .data           0x00101000        0x0
  *(.data .data.* .gnu.linkonce.d.*)
@@ -250,9 +255,10 @@ LOAD program_c.o
 .stab.indexstr
  *(.stab.indexstr)
 
-.comment        0x00000000       0x2e
+.comment        0x00000000       0x2d
  *(.comment)
- .comment       0x00000000       0x2e program_c.o
+ .comment       0x00000000       0x2d program_c.o
+                                 0x2e (размер перед ослаблением)
 
 .gnu.build.attributes
  *(.gnu.build.attributes .gnu.build.attributes.*)
@@ -345,4 +351,4 @@ LOAD program_c.o
  *(.note.GNU-stack)
  *(.gnu_debuglink)
  *(.gnu.lto_*)
-OUTPUT(program.bin binary)
+OUTPUT(program.elf elf32-i386)

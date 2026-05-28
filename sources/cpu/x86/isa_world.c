@@ -39,7 +39,7 @@ int vmcall(cpu_t* cpu, const byte* bytes, size_t max_bytes) {
 	}
 
 	else {
-		cpu_dump(cpu);
+		cpu_dump(false, cpu);
 
 		cpu->clock += 1;
 	}

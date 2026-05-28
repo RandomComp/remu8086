@@ -78,6 +78,8 @@ struct cpu_t {
 
 	cpu_mode_e cur_reg_mode;
 	cpu_mode_e cur_address_mode;
+
+	bool named_ret; bool no_approx_addr;
 };
 
 typedef struct group_t {
@@ -183,6 +185,13 @@ typedef enum cpu_flag_e {
 	CPU_FLAG_6502_NEGATIVE,
 } cpu_flag_e;
 
+#include "debugger_fwd.h"
+
+bool is_valid_instruction(instruction_t inst);
+bool is_valid_group(instruction_t inst);
+
+char* get_named_address(bool no_approx_addr, debugger_symbol_type_e type, uint64 address);
+
 uint32 write_register(cpu_t* cpu, register_e reg, uint32 value);
 uint32 read_register(cpu_t* cpu, register_e reg);
 
@@ -201,10 +210,10 @@ int read_dword(cpu_t* cpu, uint32 addr, uint32* value);
 
 int get_x86_register_bit(register_e reg);
 
-void cpu_dump_reg(cpu_t* cpu, register_e reg);
-void cpu_dump(cpu_t* cpu);
+void cpu_dump_reg(bool minimal, cpu_t* cpu, register_e reg);
+void cpu_dump(bool minimal, cpu_t* cpu);
 
-void stack_dump(cpu_t* cpu);
+void stack_dump(bool minimal, cpu_t* cpu);
 
 const char* get_cpu_err_msg(int err);
 

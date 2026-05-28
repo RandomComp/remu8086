@@ -190,6 +190,34 @@ debugger_sym_map_t* load_ldmap_from_file(const char* exec_name, const char* file
 	return result;
 }
 
+debugger_symbol_type_e c_to_symbol_type[] = {
+	['u'] = DEBUGGER_SYMBOL_TYPE_UNKNOWN, // nm unknown type
+	['t'] = DEBUGGER_SYMBOL_TYPE_FUNCTION,
+	['d'] = DEBUGGER_SYMBOL_TYPE_DATA,
+	['b'] = DEBUGGER_SYMBOL_TYPE_BSS,
+	['r'] = DEBUGGER_SYMBOL_TYPE_RODATA, // readonly
+	['a'] = DEBUGGER_SYMBOL_TYPE_ABSOLUTE, // Fixed symbol address
+	['w'] = DEBUGGER_SYMBOL_TYPE_WEAK, // if map have not other symbols with same name, this symbol is used
+	['c'] = DEBUGGER_SYMBOL_TYPE_COMMON, // Uninitialized global variables
+	['n'] = DEBUGGER_SYMBOL_TYPE_DEBUG, // Debug symbol
+	['?'] = DEBUGGER_SYMBOL_TYPE_UNDEFINED, // dynamical linking function reference
+	DEBUGGER_SYMBOL_TYPE_ANY, // any type
+};
+
+const char* symbol_type_to_readable[] = {
+	[DEBUGGER_SYMBOL_TYPE_UNKNOWN] 		= "unknown", // nm unknown type
+	[DEBUGGER_SYMBOL_TYPE_FUNCTION] 	= "functions",
+	[DEBUGGER_SYMBOL_TYPE_DATA] 		= "data",
+	[DEBUGGER_SYMBOL_TYPE_BSS] 			= "bss",
+	[DEBUGGER_SYMBOL_TYPE_RODATA] 		= "rodata", // readonly
+	[DEBUGGER_SYMBOL_TYPE_ABSOLUTE] 	= "absolute", // Fixed symbol address
+	[DEBUGGER_SYMBOL_TYPE_WEAK] 		= "weak", // if map have not other symbols with same name, this symbol is used
+	[DEBUGGER_SYMBOL_TYPE_COMMON] 		= "common", // Uninitialized global variables
+	[DEBUGGER_SYMBOL_TYPE_DEBUG] 		= "debug", // Debug symbol
+	[DEBUGGER_SYMBOL_TYPE_UNDEFINED] 	= "undefined", // dynamical linking function reference
+	[DEBUGGER_SYMBOL_TYPE_ANY] 			= "any", // any type
+};
+
 debugger_sym_map_t* load_nmmap_from_file(const char* exec_name, const char* filename) {
 	FILE* file = fopen(filename, "r");
 
@@ -230,9 +258,9 @@ debugger_sym_map_t* load_nmmap_from_file(const char* exec_name, const char* file
 
 		buf += strspn(buf, " ");
 
-		char type = buf[0];
+		char type = buf[0]; bool is_private = islower(type);
 
-		if (type != 'T') continue;
+		type = tolower(type);
 
 		buf++;
 
@@ -244,17 +272,23 @@ debugger_sym_map_t* load_nmmap_from_file(const char* exec_name, const char* file
 
 		result->syms[result->syms_cnt] = sym_realloc(result->syms[result->syms_cnt], name);
 
-		result->syms[result->syms_cnt]->addr = addr;
+		debugger_sym_map_t* cur = result->syms[result->syms_cnt];
+
+		cur->addr = addr;
 
 		if (first) {
 			result->addr = addr;
 		}
 
 		if (last) {
-			last->size = addr - last->addr;
+			// last->size = addr - last->addr;
 
 			program_size += addr - last->addr;
 		}
+
+		cur->type = c_to_symbol_type[(int)type];
+
+		cur->is_private = is_private;
 
 		last = result->syms[result->syms_cnt];
 
@@ -373,8 +407,10 @@ void map_show(debugger_sym_map_t* map, size_t tab_level) {
 		for (size_t j = 0; j < tab_level; j++) {
 			printf("    ");
 		}
+
+		size_t size = snprintf(nullptr, 0, "%s \"%s\" in %s", map->syms[i]->is_private ? "private" : "global", map->syms[i]->name, symbol_type_to_readable[map->syms[i]->type]);
 		
-		printf("\"%s\"%*s=== 0x%llx (%llu bytes)\n\r", map->syms[i]->name, (int)(60 - strlen(map->syms[i]->name) - (tab_level * 4)), "", map->syms[i]->addr, map->syms[i]->size);
+		printf("%s \"%s\" in %s%*s=== 0x%llx (%llu bytes)\n\r", map->syms[i]->is_private ? "private" : "global", map->syms[i]->name, symbol_type_to_readable[map->syms[i]->type], (int)(60 - size - (tab_level * 4)), "", map->syms[i]->addr, map->syms[i]->size);
 		
 		map_show(map->syms[i], tab_level + 1);
 	}
@@ -462,59 +498,86 @@ char* map_str_symbol(debugger_sym_map_t* map, uint64 address, bool _short) {
 	return result;
 }
 
-bool address_in_map(debugger_sym_map_t* map, uint64 address) {
+bool address_in_map(debugger_sym_map_t* map, debugger_symbol_type_e type, uint64 address) {
 	if (!map) {
 		return false;
 	}
 
 	if (map->syms && map->syms_cnt > 0 && map->syms_size > 0) {
 		for (size_t i = 0; i < map->syms_cnt; i++) {
-			if (address_in_map(map->syms[i], address))
+			if (address_in_map(map->syms[i], type, address))
 				return true;
 		}
 	}
 
 	if (address == map->addr) {
-		return true;
+		if ((map->type & type) == map->type) {
+			return true;
+		}
 	}
 
 	return false;
 }
 
-bool name_in_map(debugger_sym_map_t* map, const char* name) {
+bool name_in_map(debugger_sym_map_t* map, debugger_symbol_type_e type, const char* name) {
 	if (!map) {
 		return false;
 	}
 
 	if (map->syms && map->syms_cnt > 0 && map->syms_size > 0) {
 		for (size_t i = 0; i < map->syms_cnt; i++) {
-			if (name_in_map(map->syms[i], name))
+			if (name_in_map(map->syms[i], type, name))
 				return true;
 		}
 	}
 
 	if (strcmp(map->name, name) == 0) {
-		return true;
+		if ((map->type & type) == map->type) {
+			return true;
+		}
 	}
 
 	return false;
 }
-
-debugger_sym_map_t* get_symbol_by_address(debugger_sym_map_t* map, uint64 address) {
+debugger_sym_map_t* get_symbol_by_name(debugger_sym_map_t* map, int need_private, debugger_symbol_type_e type, const char* name) {
 	if (!map) {
 		return nullptr;
 	}
 
 	if (map->syms && map->syms_cnt > 0 && map->syms_size > 0) {
 		for (size_t i = 0; i < map->syms_cnt; i++) {
-			debugger_sym_map_t* result = get_symbol_by_address(map->syms[i], address);
+			debugger_sym_map_t* result = get_symbol_by_name(map->syms[i], need_private, type, name);
 
 			if (result) return result;
 		}
 	}
 
-	if (address >= map->addr && address <= (map->addr + map->size)) {
-		return map;
+	if (strcmp(map->name, name) == 0 && (need_private == 2 || need_private == map->is_private)) {
+		if ((map->type & type) == map->type) {
+			return map;
+		}
+	}
+
+	return nullptr;
+}
+
+debugger_sym_map_t* get_symbol_by_address(debugger_sym_map_t* map, int need_private, debugger_symbol_type_e type, uint64 address) {
+	if (!map) {
+		return nullptr;
+	}
+
+	if (map->syms && map->syms_cnt > 0 && map->syms_size > 0) {
+		for (size_t i = 0; i < map->syms_cnt; i++) {
+			debugger_sym_map_t* result = get_symbol_by_address(map->syms[i], need_private, type, address);
+
+			if (result) return result;
+		}
+	}
+
+	if (address == map->addr && (need_private == 2 || need_private == map->is_private)) {
+		if ((map->type & type) == map->type) {
+			return map;
+		}
 	}
 
 	return nullptr;
@@ -623,11 +686,12 @@ int show_help(const char* command) {
 int show_instruction_help(byte opcode, int tab_level, instruction_t inst) {
 	if (!is_valid_instruction(inst) && !is_valid_group(inst)) return -1;
 	
+	bool operands_available = inst.operands && (strlen(inst.operands) > 0);
 	bool description_available = inst.description && (strlen(inst.description) > 0);
 
 	printf("%*sOpcode: 0x%.2x\n\r", tab_level * 4, "", opcode);
 	printf("%*sMnemonic: %s\n\r", tab_level * 4, "", inst.mnemonic);
-	printf("%*sOperands: %s\n\r", tab_level * 4, "", inst.operands);
+	printf("%*sOperands: %s\n\r", tab_level * 4, "", operands_available ? inst.operands : "without");
 	printf("%*sDescription: %s\n\r", tab_level * 4, "", description_available ? inst.description : "N/A");
 
 	printf("%*sGroup: %s\n\r\n\r", tab_level * 4, "", inst.group.insts ? "yes" : "no");
@@ -680,7 +744,7 @@ int debugger_help(debugger_state* state, const char** argv, size_t argc) {
 
 			for (size_t j = 0; j < REGISTERS_MAX_CNT; j++) {
 				if (strcmp(arg, registers_name[j]) == 0) {
-					cpu_dump_reg(state->cpu, j);
+					cpu_dump_reg(state->minimal, state->cpu, j);
 
 					err = 0;
 
@@ -706,6 +770,19 @@ int debugger_help(debugger_state* state, const char** argv, size_t argc) {
 
 			for (size_t j = 0; j < 0xFF; j++) {
 				instruction_t inst = one_bytes_instructions[j];
+
+				if (!is_valid_instruction(inst) &&
+					!is_valid_group(inst)) continue;
+
+				if (strcmp(arg, inst.mnemonic) == 0) {
+					err = show_instruction_help(j, 1, inst);
+				}
+			}
+
+			if (err >= 0) continue;
+
+			for (size_t j = 0; j < 0xFF; j++) {
+				instruction_t inst = two_bytes_instructions[j];
 
 				if (!is_valid_instruction(inst) &&
 					!is_valid_group(inst)) continue;
@@ -998,6 +1075,8 @@ int debugger_insts(debugger_state* state, const char** argv, size_t argc) {
 	return 0;
 }
 
+extern debugger_sym_map_t* root;
+
 int debugger_disx(debugger_state* state, const char** argv, size_t argc) {
 	if (argc <= 1) {
 		show_help(argv[0]);
@@ -1026,6 +1105,8 @@ int debugger_disx(debugger_state* state, const char** argv, size_t argc) {
 	cpu_mode_e src_reg_mode 	= state->cpu->cur_reg_mode;
 	cpu_mode_e src_address_mode = state->cpu->cur_address_mode;
 
+	int err = 0;
+
 	while (state->cpu->pc < dis_buf_cnt) {
 		instruction_t result = { 0 };
 
@@ -1040,6 +1121,8 @@ int debugger_disx(debugger_state* state, const char** argv, size_t argc) {
 			
 			state->cpu->pc += 1;
 
+			err = 1;
+
 			continue;
 		}
 
@@ -1049,6 +1132,8 @@ int debugger_disx(debugger_state* state, const char** argv, size_t argc) {
 			printf("invalid\n\r");
 			
 			state->cpu->pc += 1;
+
+			err = 1;
 
 			continue;
 		}
@@ -1063,7 +1148,7 @@ int debugger_disx(debugger_state* state, const char** argv, size_t argc) {
 	state->cpu->cur_reg_mode = src_reg_mode;
 	state->cpu->cur_address_mode = src_address_mode;
 
-	return 0;
+	return err;
 }
 
 int debugger_dis(debugger_state* state, const char** argv, size_t argc) {
@@ -1119,7 +1204,7 @@ int debugger_dis(debugger_state* state, const char** argv, size_t argc) {
 	state->cpu->pc = offset;
 
 	for (ssize_t i = 0; i < number; i++) {
-		int err = execute_inst(argv[0], state->cpu, false, false, true, -1, &show_remaining_opcodes_if_invalid);
+		int err = execute_inst(argv[0], state->cpu, state->minimal, false, true, -1, &show_remaining_opcodes_if_invalid);
 
 		if (err < 0) {
 			state->cpu->pc = src_pc;
@@ -1167,10 +1252,14 @@ int debugger_run(debugger_state* state, const char** argv, size_t argc) {
 		}
 	}
 
-	state->cpu->pc = offset;
+	if (at_for_cmd) {
+		state->cpu->pc = offset;
+	}
 
 	while (executed < 1000) {
-		int err = execute_inst(argv[0], state->cpu, false, false, false, state->program_end, &show_remaining_opcodes_if_invalid);
+		int err = execute_inst(argv[0], state->cpu, state->minimal, state->force, false, state->program_end, &show_remaining_opcodes_if_invalid);
+
+		if (err == -2) return 0;
 
 		if (err < 0) return err;
 
@@ -1179,7 +1268,9 @@ int debugger_run(debugger_state* state, const char** argv, size_t argc) {
 		executed++;
 	}
 
-	state->cpu->pc = src_pc;
+	if (at_for_cmd) {
+		state->cpu->pc = src_pc;
+	}
 
 	return 0;
 }
@@ -1202,7 +1293,7 @@ int debugger_n(debugger_state* state, const char** argv, size_t argc) {
 	}
 
 	for (size_t i = 0; i < number; i++) {
-		int err = execute_inst(argv[0], state->cpu, false, false, false, state->program_end, &show_remaining_opcodes_if_invalid);
+		int err = execute_inst(argv[0], state->cpu, state->minimal, state->force, false, state->program_end, &show_remaining_opcodes_if_invalid);
 
 		if (err < 0) return err;
 
@@ -1468,15 +1559,35 @@ int debugger_s(debugger_state* state, const char** argv, size_t argc) {
 
 	char* endptr = nullptr;
 
-	int64 number = parse_num(argv[1], &endptr) + offset;
+	const char* number_str = argv[1];
 
-	if (endptr < (argv[1] + strlen(argv[1]))) {
-		printf("    %s: invalid number \"%s\"\n\r", argv[0], argv[1]);
-		
-		return 1;
+	int64 number = parse_num(number_str, &endptr) + offset;
+
+	int err = 0;
+
+	if (endptr < (number_str + strlen(number_str))) {
+		err = 1;
 	}
 
-	if (number < 0) {
+	if (err > 0 && name_in_map(root, DEBUGGER_SYMBOL_TYPE_ANY, number_str)) {
+		debugger_sym_map_t* map = get_symbol_by_name(root, 2, DEBUGGER_SYMBOL_TYPE_ANY, number_str);
+
+		if (!map) {
+			err = 1;
+		}
+
+		else {
+			number = map->addr + offset;
+
+			err = 0;
+		}
+	}
+
+	if (err > 0) {
+		printf("    %s: invalid number or symbol \"%s\"\n\r", argv[0], number_str);
+	}
+
+	else if (number < 0) {
 		number = ((number % state->cpu->ram_size) + state->cpu->ram_size) % state->cpu->ram_size;
 	}
 
@@ -1496,20 +1607,26 @@ int debugger_echo(debugger_state* state, const char** argv, size_t argc) {
 }
 
 int debugger_cpu(debugger_state* state, const char** argv, size_t argc) {
-	cpu_dump(state->cpu);
+	cpu_dump(state->minimal, state->cpu);
 
 	return 0;
 }
 
 int debugger_stack(debugger_state* state, const char** argv, size_t argc) {
-	stack_dump(state->cpu);
+	stack_dump(state->minimal, state->cpu);
 
 	return 0;
 }
 
 int debugger_bt(debugger_state* state, const char** argv, size_t argc) {
 	if (!state->cpu->call_stack) {
-		printf("%s: cannot show backtrace becase backtrace is not setuped\n\r", argv[0]);
+		if (!state->minimal) {
+			printf("%s: cannot show backtrace becase backtrace is not setuped\n\r", argv[0]);
+		}
+
+		else {
+			printf("%s: uninitialized backtrace\n\r", argv[0]);
+		}
 
 		return 1;
 	}
@@ -1547,6 +1664,8 @@ int debugger_wx(debugger_state* state, const char** argv, size_t argc) {
 	}
 
 	uint32 offset = state->cpu->pc;
+
+	at_arg += 1;
 
 	if (at_for_cmd) {
 		if (argc > at_arg) {
@@ -1618,7 +1737,9 @@ int debugger_wx(debugger_state* state, const char** argv, size_t argc) {
 		state->cpu->pc = src_pc;
 	}
 
-	printf("Writed %zu bytes\n\r", wx_buf_cnt);
+	if (!state->minimal) {
+		printf("Writed %zu bytes\n\r", wx_buf_cnt);
+	}
 
 	return 0;
 }
@@ -1685,7 +1806,9 @@ int debugger_rx(debugger_state* state, const char** argv, size_t argc) {
 
 	printf("\n\r");
 
-	printf("Readed %llu bytes\n\r", number);
+	if (!state->minimal) {
+		printf("Readed %llu bytes\n\r", number);
+	}
 
 	return 0;
 }
@@ -1755,9 +1878,15 @@ int debugger_ws(debugger_state* state, const char** argv, size_t argc) {
 	}
 
 	if (err < 0) {
-		printf("%s: While trying to write bytes on address 0x%x an error occured:\n\r", argv[0], state->cpu->pc);
+		if (!state->minimal) {
+			printf("%s: While trying to write bytes on address 0x%x an error occured:\n\r", argv[0], state->cpu->pc);
 
-		printf("        %s\n\r", get_cpu_err_msg(err));
+			printf("        %s\n\r", get_cpu_err_msg(err));
+		}
+
+		else {
+			printf("%s\n\r", get_cpu_err_msg(err));
+		}
 
 		return err;
 	}
@@ -1776,7 +1905,9 @@ int debugger_ws(debugger_state* state, const char** argv, size_t argc) {
 		state->cpu->pc = src_pc;
 	}
 
-	printf("Writed %zu bytes\n\r", writed_cnt);
+	if (!state->minimal) {
+		printf("Writed %zu bytes\n\r", writed_cnt);
+	}
 
 	return 0;
 }
@@ -1867,12 +1998,12 @@ int debugger_rs(debugger_state* state, const char** argv, size_t argc) {
 
 	state->cpu->clock = ticks;
 
-	printf("Readed %llu bytes\n\r", number);
+	if (!state->minimal) {
+		printf("Readed %llu bytes\n\r", number);
+	}
 
 	return 0;
 }
-
-extern debugger_sym_map_t* root;
 
 int debugger_sym(debugger_state* state, const char** argv, size_t argc) {
 	if (argc <= 1) {
@@ -1887,7 +2018,7 @@ int debugger_sym(debugger_state* state, const char** argv, size_t argc) {
 		root = map_realloc_syms_ptr(root, "root", DEBUGGER_SYMS_ALLOC_STEP);
 	}
 
-	if (name_in_map(root, file_name)) {
+	if (name_in_map(root, DEBUGGER_SYMBOL_TYPE_ANY, file_name)) {
 		printf("%s: file \"%s\" already loaded\n\r", argv[0], file_name);
 
 		return 1;
@@ -1912,7 +2043,13 @@ int debugger_sym(debugger_state* state, const char** argv, size_t argc) {
 
 int debugger_lssym(debugger_state* state, const char** argv, size_t argc) {
 	if (!root) {
-		printf("%s: no symbols to list (root not initialized)\n\r", argv[0]);
+		if (!state->minimal) {
+			printf("%s: no symbols to list (root not initialized)\n\r", argv[0]);
+		}
+
+		else {
+			printf("%s: root not initialized\n\r", argv[0]);
+		}
 		
 		return 0;
 	}
@@ -1984,7 +2121,9 @@ int debugger_wf(debugger_state* state, const char** argv, size_t argc) {
 	
 	state->cpu->pc += bytes;
 
-	printf("Writed %zu bytes\n\r", bytes);
+	if (!state->minimal) {
+		printf("Writed %zu bytes\n\r", bytes);
+	}
 
 	if (at_for_cmd) {
 		state->cpu->pc = src_pc;
@@ -2053,7 +2192,9 @@ int debugger_sf(debugger_state* state, const char** argv, size_t argc) {
 
 	fclose(file);
 
-	printf("Saved %zu bytes\n\r", bytes);
+	if (!state->minimal) {
+		printf("Saved %zu bytes\n\r", bytes);
+	}
 
 	state->cpu->pc += bytes;
 
@@ -2108,6 +2249,113 @@ int debugger_sh(debugger_state* state, const char** argv, size_t argc) {
 }
 #endif
 
+debugger_variable_t** variables = nullptr;
+size_t variables_cnt = 0, variables_size = 0;
+
+debugger_variable_t* get_var_by_name(const char* name) {
+	if (!variables) return nullptr;
+
+	debugger_variable_t* result = nullptr;
+
+	for (size_t i = 0; i < variables_cnt; i++) {
+		debugger_variable_t* cur = variables[i];
+
+		if (!cur || !cur->name || !cur->value) continue;
+
+		if (strcmp(cur->name, name) == 0) {
+			result = cur; break;
+		}
+	}
+
+	return result;
+}
+
+int set_var(const char* name, const char* value) {
+	debugger_variable_t* var = get_var_by_name(name);
+
+	if (!var || !var->name || !var->value) {
+		if (!variables) {
+			realloc_vars(DEBUGGER_VARIABLES_ALLOC_STEP);
+		}
+
+		var = variables[variables_cnt];
+
+		var->name = strdup(name);
+
+		variables_cnt++;
+
+		if (variables_cnt >= variables_size) {
+			realloc_vars(variables_cnt + 1);
+		}
+	}
+
+	if (var) {
+		if (var->value) free(var->value);
+
+		var->value = strdup(value);
+	}
+
+	else return -1;
+
+	return 0;
+}
+
+char addr_buf[32] = { 0 };
+
+char* get_var(const char* name) {
+	debugger_variable_t* var = get_var_by_name(name);
+
+	if (!var || !var->name || !var->value) {
+		debugger_sym_map_t* sym = get_symbol_by_name(root, 2, DEBUGGER_SYMBOL_TYPE_ANY, name);
+
+		if (!sym) return nullptr;
+
+		snprintf(addr_buf, 32, "%llu", sym->addr);
+
+		return addr_buf;
+	}
+
+	return var->value;
+}
+
+void realloc_vars(size_t size) {
+	size = align_up(size, DEBUGGER_VARIABLES_ALLOC_STEP);
+
+	variables = realloc(variables, size * sizeof(debugger_variable_t*));
+
+	if (size >= variables_size) {
+		memset(variables + variables_size, 0, (size - variables_size) * sizeof(debugger_variable_t*));
+	}
+
+	for (size_t i = variables_size; i < size; i++) {
+		variables[i] = malloc(sizeof(debugger_variable_t));
+
+		memset(variables[i], 0, sizeof(debugger_variable_t));
+	}
+
+	variables_size = size;
+} 
+
+void free_vars(void) {
+	if (!variables) return;
+
+	for (size_t i = 0; i < variables_cnt; i++) {
+		if (!variables[i]) continue;
+
+		if (variables[i]->name) {
+			free(variables[i]->name); variables[i]->name = nullptr;
+		}
+
+		if (variables[i]->value) {
+			free(variables[i]->value); variables[i]->value = nullptr;
+		}
+
+		free(variables[i]); variables[i] = nullptr;
+	}
+}
+
+int last_err = 0;
+
 int execute_debugger_command(debugger_state* state, const char** argv, size_t argc) {
 	if (!argv || argc <= 0) return -1;
 
@@ -2129,19 +2377,27 @@ int execute_debugger_command(debugger_state* state, const char** argv, size_t ar
 		}
 
 		else {
-			return 127;
+			err = 127;
 		}
 	}
+
+	last_err = err;
+
+	char err_buf[4] = { 0 };
+
+	snprintf(err_buf, 4, "%i", last_err);
+
+	set_var("?", err_buf);
 
 	return err;
 }
 
-void debug_loop(const char* exec_name, size_t program_start, size_t program_size, cpu_t* cpu) {
+void debug_loop(const char* exec_name, size_t program_start, size_t program_size, cpu_t* cpu, bool minimal, bool force) {
 	bool quit = false;
 
 	char* buf = nullptr;
 
-	char prompt[16] = { 0 };
+	char prompt[32] = { 0 };
 
 	#ifdef IS_UNIX
 	const char* home_path = get_home_dir();
@@ -2160,12 +2416,24 @@ void debug_loop(const char* exec_name, size_t program_start, size_t program_size
 	linenoiseSetCompletionCallback(debugger_completion);
 	#endif
 
+	set_var("?", "0");
+
 	while (!quit) {
 		if (buf) {
 			free(buf); buf = nullptr;
 		}
 
-		snprintf(prompt, 16, "[0x%.8x]> ", cpu->pc);
+		for (size_t i = 0; i < REGISTERS_MAX_CNT; i++) {
+			char value_buf[32] = { 0 };
+
+			snprintf(value_buf, 32, "%u", cpu->registers[i]);
+
+			set_var(registers_name[i], value_buf);
+		}
+
+		if (!minimal) {
+			snprintf(prompt, 32, "[0x%.8x]> ", cpu->pc);
+		}
 		
 		#ifdef IS_UNIX
 		buf = linenoise(prompt);
@@ -2192,7 +2460,8 @@ void debug_loop(const char* exec_name, size_t program_start, size_t program_size
 		debugger_state state = {
 			.cpu = cpu,
 			.program_start = program_start,
-			.program_end = program_start + program_size
+			.program_end = program_start + program_size,
+			.minimal = minimal, .force = force
 		};
 
 		const char* command = parse_cli_args(buf);
@@ -2200,6 +2469,28 @@ void debug_loop(const char* exec_name, size_t program_start, size_t program_size
 		const char* argv[16] = { 0 }; size_t argc = 0;
 
 		while (command && argc < 16) {
+			size_t index = strcspn(command, "$");
+
+			if (index != strlen(command)) {
+				if (command[index - 1] != '\\') {
+					size_t space_index = strcspn(command, " ");
+
+					char* _command = malloc(space_index - index + 1);
+
+					memcpy(_command, command + index + 1, space_index - index);
+
+					_command[space_index - index] = '\0';
+
+					char* value = get_var(_command);
+
+					if (value) {
+						command = value;
+					}
+
+					free(_command);
+				}
+			}
+
 			argv[argc] = command;
 
 			command = parse_cli_args(nullptr);
@@ -2216,6 +2507,8 @@ void debug_loop(const char* exec_name, size_t program_start, size_t program_size
 		else if (err == 500) {
 			break;
 		} 
+
+		last_err = err;
 	}
 
 	printf("\n\r");
@@ -2225,6 +2518,8 @@ void debug_loop(const char* exec_name, size_t program_start, size_t program_size
 	}
 
 	map_free(root);
+
+	free_vars();
 
 	#ifdef IS_UNIX
 	int err = linenoiseHistorySave(history_file);

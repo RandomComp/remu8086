@@ -8,6 +8,8 @@
 
 #include <stdio.h>
 
+#include "debugger.h"
+
 const char* registers_name[32] = {
 	[REGISTER_EAX] 		= 	"eax",
 	[REGISTER_ECX] 		= 	"ecx",
@@ -41,6 +43,36 @@ const char* registers_name[32] = {
 	[REGISTER_DH] 		= 	"dh",
 	[REGISTER_BH] 		= 	"bh",
 };
+
+debugger_sym_map_t* root = nullptr;
+
+bool is_valid_instruction(instruction_t inst) {
+	return inst.is && inst.handler && inst.disassemble && inst.mnemonic && inst.operands;
+}
+
+bool is_valid_group(instruction_t inst) {
+	return inst.mnemonic && inst.operands && inst.group.insts;
+}
+
+char* get_named_address(bool no_approx_addr, debugger_symbol_type_e type, uint64 address) {
+	debugger_sym_map_t* symbol = get_symbol_by_address(root, 1, type, address);
+
+	if (!symbol) {
+		symbol = get_symbol_by_address(root, 0, type, address);
+	}
+
+	if (!root || (!symbol && no_approx_addr)) {
+		size_t result_size = snprintf(nullptr, 0, "0x%llx", address) + 1;
+
+		char* result = malloc(result_size);
+
+		snprintf(result, result_size, "0x%llx", address);
+
+		return result;
+	}
+
+	return map_str_symbol(symbol, address, true);
+}
 
 int write_byte(cpu_t* cpu, uint32 addr, byte value) {
 	cpu->clock += 1;
@@ -224,7 +256,7 @@ int get_x86_register_bit(register_e reg) {
 	return 0;
 }
 
-void cpu_dump_reg(cpu_t* cpu, register_e reg) {
+void cpu_dump_reg(bool minimal, cpu_t* cpu, register_e reg) {
 	int bits = get_x86_register_bit(reg);
 
 	uint32 value = read_register(cpu, reg);
@@ -232,18 +264,26 @@ void cpu_dump_reg(cpu_t* cpu, register_e reg) {
 	int hex_len = bits / 4;
 	int decimal_len = align_down((bits * 10), 3) / 30;
 
-	printf("    %-12s = 0x%.*x " SEPERATOR " %*u " SEPERATOR " 0b%.*b\n\r", registers_name[reg], hex_len, value, decimal_len, value, bits, value);
-}
-
-void cpu_dump(cpu_t* cpu) {
-	for (size_t i = 0; i < REGISTERS_CNT; i++) {
-		cpu_dump_reg(cpu, i);
+	if (!minimal) {
+		printf("    %-12s = 0x%.*x " SEPERATOR " %*u " SEPERATOR " 0b%.*b\n\r", registers_name[reg], hex_len, value, decimal_len, value, bits, value);
 	}
 
-	printf("executed/disassembled/debuged %llu instructions " SEPERATOR " cpu clock (tsc) = %llu\n\r", cpu->executed_insts, cpu->clock);
+	else {
+		printf("%-12s = 0x%.*x\n\r", registers_name[reg], hex_len, value);
+	}
 }
 
-void stack_dump(cpu_t* cpu) {
+void cpu_dump(bool minimal, cpu_t* cpu) {
+	for (size_t i = 0; i < REGISTERS_CNT; i++) {
+		cpu_dump_reg(minimal, cpu, i);
+	}
+
+	if (!minimal) {
+		printf("executed/disassembled/debuged %llu instructions " SEPERATOR " cpu clock (tsc) = %llu\n\r", cpu->executed_insts, cpu->clock);
+	}
+}
+
+void stack_dump(bool minimal, cpu_t* cpu) {
 	if (cpu->stack > cpu->stack_upper || 
 		(cpu->stack == 0 && cpu->stack_upper == 0)) {
 		printf("    Stack corrupted (or not initialized)\n\r");
@@ -256,7 +296,13 @@ void stack_dump(cpu_t* cpu) {
 							(cpu->ram[i + 2] << 16)|
 							(cpu->ram[i + 3] << 24);
 
-			printf("    [%.8x] = 0x%.9x " SEPERATOR " %.10u " SEPERATOR " 0b%.32b\n", i, val, val, val);
+			if (!minimal) {
+				printf("    [%.8x] = 0x%.9x " SEPERATOR " %.10u " SEPERATOR " 0b%.32b\n\r", i, val, val, val);
+			}
+
+			else {
+				printf("0x%.9x\n\r", val);
+			}
 		}
 	}
 }

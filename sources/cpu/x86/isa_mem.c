@@ -276,7 +276,14 @@ const char* mov_n_to_r_disassemble(cpu_t* cpu, const byte* bytes, size_t max_byt
 					((uint32)bytes[4] << 24);
 	}
 
-	snprintf(disassemble_buf, 32, "mov %-3s, %u", registers_name[reg], number);
+	if (reg == REGISTER_ESP || reg == REGISTER_EBP || 
+		reg == REGISTER_ESI || reg == REGISTER_EDI) {
+		snprintf(disassemble_buf, 32, "mov %-3s, %s", registers_name[reg], get_named_address(cpu, DEBUGGER_SYMBOL_TYPE_ABSOLUTE | DEBUGGER_SYMBOL_TYPE_BSS | DEBUGGER_SYMBOL_TYPE_DATA | DEBUGGER_SYMBOL_TYPE_COMMON, number));
+	}
+
+	else {
+		snprintf(disassemble_buf, 32, "mov %-3s, %u", registers_name[reg], number);
+	}
 
 	return disassemble_buf;
 }

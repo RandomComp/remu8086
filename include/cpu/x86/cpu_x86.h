@@ -170,6 +170,8 @@ struct cpu_x86_t {
 
 	cpu_mode_e cur_reg_mode;
 	cpu_mode_e cur_address_mode;
+
+	bool named_ret; bool no_approx_addr;
 };
 
 typedef struct PACKED modrm_t {
@@ -207,10 +209,6 @@ typedef struct PACKED sib_t {
 } sib_t;
 
 extern const char* registers_name[32];
-
-bool is_valid_instruction(instruction_t inst);
-
-bool is_valid_group(instruction_t inst);
 
 size_t parse_sib(int32* addr, byte mod, cpu_t* cpu, const byte* bytes, size_t max_bytes);
 

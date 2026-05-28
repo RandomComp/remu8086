@@ -87,6 +87,8 @@ typedef _Bool bool;
 #define REMU80386_VER_MAJOR 0
 #define REMU80386_VER_MINOR 2
 
+#define REMU80386_MINIMAL_INFO "remu80386 " PLATFORM_ARCH " %i.%i"
+
 #define REMU80386_INFO "remu80386 %i.%i -- a 80386 emulator, compiled using " PLATFORM_COMPILER_NAME " %i.%i for " PLATFORM_NAME " " PLATFORM_ARCH
 
 #if defined(PLATFORM_X86_64) || defined(PLATFORM_AARCH_64)

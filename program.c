@@ -8,12 +8,16 @@ typedef unsigned char byte;
 
 // void print_str(byte style, const char* str);
 
-int some_function(int volatile i, int step) {
-	if (step >= 20) {
-		return i;
-	}
+// int some_function(int volatile i, int step) {
+// 	if (step >= 20) {
+// 		return i;
+// 	}
 
-	return i * 2 * some_function(i, step + 1);
+// 	return i * 2 * some_function(i, step + 1);
+// }
+
+static int calc(volatile int x) {
+	return (x * x) + x;
 }
 
 void kmain(uint32 x) {
@@ -21,7 +25,9 @@ void kmain(uint32 x) {
 
 	asm volatile("int3");
 
-	asm volatile("vmcall");
+	calc(i);
+
+	// asm volatile("vmcall");
 
 	// i *= some_function(i, 0);
 }
